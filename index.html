@@ -1,0 +1,1444 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<meta name="description" content="Interactive proof of concept for a return-to-run progression portal.">
+<title>The Lab — Return to Run Portal</title>
+<style>
+*,*::before,*::after{box-sizing:border-box}
+:root{
+  --bg:#f2f2f3; --surface:#ffffff; --surface-2:#fafafa;
+  --ink:#0a0a0a; --ink-2:#3f3f46; --muted:#71717a; --line:#e4e4e7;
+  --accent:#E31B23; --accent-2:#ff2f37; --accent-ink:#B3141B; --accent-soft:#fdeced;
+  --green:#15803d; --green-soft:#e9f6ee;
+  --amber:#b45309; --amber-soft:#fdf3e3;
+  --red:#C4131A; --red-soft:#fdeced;
+  --blue:#3f3f46; --blue-soft:#f0f0f2;
+  --r:14px; --r-sm:9px;
+  --sh:0 1px 2px rgba(13,28,34,.05),0 8px 24px rgba(13,28,34,.06);
+  --sh-lg:0 24px 60px rgba(13,28,34,.16);
+  --fs:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Inter,Helvetica,Arial,sans-serif;
+}
+html,body{margin:0;padding:0}
+body{font-family:var(--fs);background:var(--bg);color:var(--ink);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+h1,h2,h3,h4{margin:0;font-weight:650;letter-spacing:-.015em}
+button{font-family:inherit;font-size:inherit;cursor:pointer;border:0;background:none;color:inherit}
+input,select{font-family:inherit;font-size:inherit;color:inherit}
+.mono{font-variant-numeric:tabular-nums;font-feature-settings:"tnum"}
+
+/* ---------- shell ---------- */
+.switcher{background:#0a0a0a;padding:9px 22px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;position:sticky;top:0;z-index:60}
+.switcher .swl{font-size:10px;letter-spacing:.15em;text-transform:uppercase;font-weight:700;color:#71717a}
+.switcher select{background:#18181b;border:1px solid #2e2e33;color:#e4e4e7;padding:7px 11px;border-radius:8px;font-size:12.5px;font-weight:600;max-width:420px}
+.seg.dark{background:#18181b;border-color:#2e2e33}
+.seg.dark button{color:#a1a1aa}
+.seg.dark button:hover{color:#fff}
+.seg.dark button.on{background:var(--accent);color:#fff;box-shadow:none}
+.apphead{background:var(--surface);border-bottom:1px solid var(--line);padding:15px 26px;display:flex;align-items:center;gap:18px;flex-wrap:wrap}
+.applogo{display:flex;align-items:center;gap:11px}
+.applogo .mk{width:34px;height:34px;border-radius:8px;background:var(--accent);display:grid;place-items:center;flex:0 0 34px}
+.applogo .nm{font-weight:800;font-size:15.5px;letter-spacing:.15em;line-height:1.15}
+.applogo .sb{font-size:9.5px;color:var(--muted);letter-spacing:.17em;text-transform:uppercase;font-weight:700;margin-top:3px}
+.appnav{background:var(--surface);border-bottom:1px solid var(--line);padding:0 22px;display:flex;gap:2px;overflow-x:auto;position:sticky;top:41px;z-index:50}
+.appnav::-webkit-scrollbar{height:0}
+.appnav button{padding:12px 15px;font-size:13.5px;font-weight:620;color:var(--muted);border-bottom:2.5px solid transparent;white-space:nowrap;display:flex;align-items:center;gap:7px;transition:.15s}
+.appnav button:hover{color:var(--ink)}
+.appnav button.on{color:var(--accent);border-bottom-color:var(--accent)}
+.appmain{container-type:inline-size;padding:24px 26px 64px;max-width:1400px;width:100%;margin:0 auto}
+.view{display:none}.view.on{display:block}
+.spacer{flex:1}
+
+/* ---------- primitives ---------- */
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--sh)}
+.card-h{padding:15px 18px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px}
+.card-h h3{font-size:14.5px}
+.card-h .hint{font-size:11.5px;color:var(--muted)}
+.card-b{padding:18px}
+.grid{display:grid;gap:16px}
+.grid>*{min-width:0}
+.sgrid{grid-template-columns:repeat(4,minmax(0,1fr))}
+.g2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.dgrid{grid-template-columns:minmax(0,1.5fr) minmax(320px,1fr)}
+.card:has(> table){overflow-x:auto}
+@media (max-width:1340px){.dgrid{grid-template-columns:1fr}}
+@media (max-width:1000px){.g2{grid-template-columns:1fr}}
+@media (max-width:900px){.sgrid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.btn{display:inline-flex;align-items:center;gap:7px;padding:8px 14px;border-radius:9px;font-weight:600;font-size:13px;background:var(--surface);border:1px solid var(--line);color:var(--ink-2);transition:.15s}
+.btn:hover{background:var(--surface-2);border-color:#d4d4d8}
+.btn-p{background:var(--ink);border-color:var(--ink);color:#fff}
+.btn-p:hover{background:#27272a;border-color:#27272a}
+.btn-sm{padding:5px 10px;font-size:12px;border-radius:7px}
+.btn-blk{width:100%;justify-content:center;padding:13px;font-size:15px;border-radius:11px}
+.pill{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:99px;font-size:11px;font-weight:650;letter-spacing:.01em}
+.pill-g{background:var(--green-soft);color:var(--green)}
+.pill-a{background:var(--amber-soft);color:var(--amber)}
+.pill-r{background:var(--red-soft);color:var(--red)}
+.pill-b{background:var(--blue-soft);color:var(--blue)}
+.pill-n{background:var(--surface-2);color:var(--muted);border:1px solid var(--line)}
+.dot{width:8px;height:8px;border-radius:99px;display:inline-block;flex:0 0 8px}
+.dot-g{background:#1a9e55}.dot-a{background:#e3941b}.dot-r{background:#E31B23}.dot-n{background:#d4d4d8}
+.lbl{font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);font-weight:650;margin-bottom:6px;display:block}
+.field{display:block;margin-bottom:14px}
+.field input,.field select{width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:9px;background:var(--surface);outline:none;transition:.15s}
+.field input:focus,.field select:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+table{width:100%;border-collapse:collapse}
+th{text-align:left;font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:650;padding:9px 12px;border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:11px 12px;border-bottom:1px solid var(--line);vertical-align:middle}
+tbody tr:last-child td{border-bottom:0}
+tbody tr.click{cursor:pointer;transition:.12s}
+tbody tr.click:hover{background:var(--surface-2)}
+.stat{padding:15px 17px}
+.stat .k{font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);font-weight:650}
+.stat .v{font-size:26px;font-weight:680;letter-spacing:-.03em;margin-top:5px;line-height:1}
+.stat .d{font-size:11.5px;color:var(--muted);margin-top:5px}
+.note{background:var(--surface-2);border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:var(--r-sm);padding:11px 13px;font-size:12.5px;color:var(--ink-2);line-height:1.55}
+.note.warn{background:var(--amber-soft);border-color:#f5dcb4;color:#7a4a06}
+.note.bad{background:var(--red-soft);border-color:#f7cfcf;color:#8f2020}
+.avatar{width:32px;height:32px;border-radius:99px;display:grid;place-items:center;font-size:11.5px;font-weight:700;color:#fff;flex:0 0 32px;letter-spacing:.02em}
+.seg{display:inline-flex;background:var(--surface-2);border:1px solid var(--line);border-radius:9px;padding:3px;gap:2px}
+.seg button{padding:6px 13px;border-radius:6px;font-size:12.5px;font-weight:600;color:var(--muted)}
+.seg button.on{background:var(--surface);color:var(--ink);box-shadow:0 1px 3px rgba(13,28,34,.12)}
+
+/* ---------- patient screens ---------- */
+.wgrid{display:grid;grid-template-columns:1.4fr 1fr;gap:18px;align-items:start}
+.wgrid>*{min-width:0}
+.wstats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-bottom:18px}
+
+.hero{background:linear-gradient(135deg,#0a0a0a 0%,#18181b 58%,#26262b 100%);border-radius:16px;padding:26px;color:#fff;box-shadow:0 14px 34px rgba(10,10,10,.22);margin-bottom:18px;
+  display:flex;align-items:center;justify-content:space-between;gap:26px;flex-wrap:wrap}
+.hero .eyebrow{font-size:11px;letter-spacing:.13em;text-transform:uppercase;color:#ff4f56;font-weight:750}
+.hero .big{font-size:56px;font-weight:700;letter-spacing:-.04em;line-height:1;margin:8px 0 4px}
+.hero .big span{font-size:21px;font-weight:600;opacity:.9;letter-spacing:0}
+.hero .sub{font-size:13.5px;opacity:.92;max-width:44ch;line-height:1.5}
+.hero .btn{background:var(--accent);border-color:var(--accent);color:#fff;font-size:15px;padding:13px 26px;border-radius:11px;box-shadow:0 6px 18px rgba(227,27,35,.32)}
+.hero .btn:hover{background:#c5151d;border-color:#c5151d}
+
+.dayrow{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:8px}
+.daycell{text-align:center;padding:12px 4px;border-radius:11px;background:var(--surface);border:1px solid var(--line)}
+.daycell .dn{font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);font-weight:700}
+.daycell .dd{font-size:10px;color:var(--muted);margin-top:1px}
+.daycell .dv{font-size:14px;font-weight:680;margin-top:5px}
+.daycell.rest{background:var(--surface-2)}
+.daycell.rest .dv{color:var(--muted);font-weight:600}
+.daycell.done{background:var(--green-soft);border-color:#bfe6cd}
+.daycell.done .dv{color:var(--green)}
+.daycell.today{border-color:var(--accent);box-shadow:0 0 0 2.5px var(--accent-soft)}
+
+.pcard{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:18px;margin-bottom:16px;box-shadow:var(--sh)}
+.pcard:last-child{margin-bottom:0}
+.pcard h4{font-size:14.5px;margin-bottom:3px}
+.pcard .sm{font-size:12.5px;color:var(--muted);line-height:1.55}
+.runrow{display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--line)}
+.runrow:last-child{border-bottom:0}
+.runrow:first-of-type{padding-top:4px}
+.ring{transform:rotate(-90deg)}
+.msgwrap{display:grid;grid-template-columns:294px 1fr}
+.msglist{border-right:1px solid var(--line);overflow-y:auto;max-height:600px}
+.msgitem{display:flex;gap:11px;align-items:flex-start;padding:13px 15px;border-bottom:1px solid var(--line);width:100%;text-align:left;transition:.12s}
+.msgitem:hover{background:var(--surface-2)}
+.msgitem.on{background:var(--accent-soft)}
+.msgitem .mn{font-weight:640;font-size:13px;display:flex;align-items:center;gap:6px}
+.msgitem .mp{font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:2px}
+.msgitem .mt{font-size:10.5px;color:var(--muted);white-space:nowrap;padding-top:2px}
+.unread{width:8px;height:8px;border-radius:99px;background:var(--accent);flex:0 0 8px}
+.thread{display:flex;flex-direction:column;min-height:520px}
+.thread-h{padding:13px 18px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:11px;background:var(--surface)}
+.thread-b{flex:1;padding:18px;overflow-y:auto;max-height:470px;background:var(--surface-2);display:flex;flex-direction:column;gap:11px}
+.bub{max-width:76%;padding:10px 14px;border-radius:15px;font-size:13.5px;line-height:1.5}
+.bub .bt{font-size:10.5px;opacity:.7;margin-top:5px}
+.bub.them{background:var(--surface);border:1px solid var(--line);align-self:flex-start;border-bottom-left-radius:5px}
+.bub.me{background:var(--ink);color:#fff;align-self:flex-end;border-bottom-right-radius:5px}
+.daysep{text-align:center;font-size:11px;color:var(--muted);font-weight:600;padding:20px 0}
+.composer{border-top:1px solid var(--line);padding:12px 14px;display:flex;gap:9px;background:var(--surface)}
+.composer input{flex:1;padding:10px 13px;border:1px solid var(--line);border-radius:10px;outline:none}
+.composer input:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.badge{background:var(--accent);color:#fff;font-size:10px;font-weight:700;border-radius:99px;padding:1px 6px;min-width:17px;text-align:center;display:inline-block;line-height:1.6}
+.iconbtn{position:relative;width:36px;height:36px;border-radius:9px;border:1px solid var(--line);display:grid;place-items:center;background:var(--surface)}
+.iconbtn:hover{background:var(--surface-2)}
+.iconbtn .badge{position:absolute;top:-6px;right:-6px}
+@media (max-width:900px){.msgwrap{grid-template-columns:1fr}.msglist{max-height:230px}}
+.ringwrap{position:relative;width:128px;height:128px;margin:2px auto 0}
+.ringwrap svg{display:block}
+.ringlabel{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.ringlabel .rv{font-size:30px;font-weight:700;letter-spacing:-.03em;line-height:1.05}
+.ringlabel .rl{font-size:10.5px;color:var(--muted);font-weight:650;letter-spacing:.03em}
+
+@container (max-width:760px){
+  .wgrid{grid-template-columns:1fr}
+  .wstats{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .hero{padding:20px;border-radius:14px}
+  .hero .big{font-size:44px}
+  .hero .btn{width:100%;justify-content:center}
+  .daycell{padding:9px 2px}
+  .daycell .dv{font-size:12.5px}
+  .daycell .dd{display:none}
+}
+@media (max-width:760px){
+  .appmain{padding:16px 14px 50px}
+  .apphead{padding:12px 15px}
+  .appnav{padding:0 7px;top:39px}
+  .appnav button{padding:11px 12px;font-size:13px}
+  .switcher{padding:9px 14px}
+}/* ---------- sliders ---------- */
+.painslider{-webkit-appearance:none;appearance:none;width:100%;height:9px;border-radius:99px;outline:none;
+  background:linear-gradient(90deg,#22a35a 0%,#8cc63f 25%,#e3b41b 50%,#e07b1b 75%,#dc3838 100%)}
+.painslider::-webkit-slider-thumb{-webkit-appearance:none;width:27px;height:27px;border-radius:99px;background:#fff;border:3px solid var(--ink);cursor:pointer;box-shadow:0 3px 10px rgba(0,0,0,.22)}
+.painslider::-moz-range-thumb{width:27px;height:27px;border-radius:99px;background:#fff;border:3px solid var(--ink);cursor:pointer}
+.painval{font-size:34px;font-weight:700;letter-spacing:-.03em;line-height:1}
+.scaleends{display:flex;justify-content:space-between;font-size:10.5px;color:var(--muted);margin-top:7px;font-weight:600}
+.yn{display:flex;gap:10px}
+.yn button{flex:1;padding:14px;border-radius:12px;border:1.5px solid var(--line);font-weight:650;background:var(--surface);color:var(--ink-2)}
+.yn button.on-y{background:var(--green-soft);border-color:#7fc79a;color:var(--green)}
+.yn button.on-n{background:var(--red-soft);border-color:#eda6a6;color:var(--red)}
+
+/* ---------- modal ---------- */
+.scrim{position:fixed;inset:0;background:rgba(9,22,27,.55);backdrop-filter:blur(3px);z-index:100;display:none;align-items:center;justify-content:center;padding:24px}
+.scrim.on{display:flex}
+.modal{background:var(--surface);border-radius:20px;width:100%;max-width:420px;box-shadow:var(--sh-lg);max-height:88vh;overflow-y:auto}
+.modal-h{padding:18px 20px 14px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px}
+.modal-b{padding:20px}
+.modal-f{padding:14px 20px 20px;display:flex;gap:10px}
+.step{display:none}.step.on{display:block}
+.stepdots{display:flex;gap:5px}
+.stepdots i{width:22px;height:3.5px;border-radius:99px;background:var(--line);display:block}
+.stepdots i.on{background:var(--accent)}
+
+/* ---------- misc ---------- */
+.bar-wrap{display:flex;align-items:flex-end;gap:6px;height:132px;padding-top:8px}
+.bar{flex:1;position:relative;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;height:100%;padding-bottom:17px}
+.bar .fill{width:100%;border-radius:6px 6px 3px 3px;min-height:3px;flex:0 1 auto;transition:height .35s}
+.bar .cap{position:absolute;bottom:0;left:0;right:0;text-align:center;font-size:10px;color:var(--muted);font-weight:650}
+.bar .amt{flex:0 0 auto;margin-bottom:3px;font-size:10.5px;font-weight:680}
+.kv{display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px dashed var(--line);font-size:13px}
+.kv:last-child{border-bottom:0}
+.kv .k{color:var(--muted)}
+.kv .v{font-weight:650}
+.toggle{width:40px;height:23px;border-radius:99px;background:#d4d4d8;position:relative;transition:.18s;flex:0 0 40px}
+.toggle.on{background:var(--accent)}
+.toggle i{position:absolute;top:2.5px;left:2.5px;width:18px;height:18px;border-radius:99px;background:#fff;transition:.18s;box-shadow:0 1px 3px rgba(0,0,0,.2)}
+.toggle.on i{left:19.5px}
+.setrow{display:flex;align-items:center;gap:14px;padding:13px 0;border-bottom:1px solid var(--line)}
+.setrow:last-child{border-bottom:0}
+.setrow .st{font-weight:600;font-size:13px}
+.setrow .sd{font-size:11.5px;color:var(--muted);line-height:1.45;margin-top:2px}
+.toast{position:fixed;bottom:26px;left:50%;transform:translateX(-50%) translateY(90px);background:var(--ink);color:#fff;padding:12px 20px;border-radius:11px;font-size:13px;font-weight:600;box-shadow:var(--sh-lg);z-index:200;opacity:0;transition:.3s;pointer-events:none}
+.toast.on{transform:translateX(-50%) translateY(0);opacity:1}
+.tag{font-size:10.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;padding:2px 7px;border-radius:5px}
+.flagbox{display:flex;gap:10px;align-items:flex-start;padding:11px 13px;border-radius:10px;margin-bottom:9px;font-size:12.5px;line-height:1.5}
+</style>
+</head>
+<body>
+<div class="switcher">
+  <span class="swl">Proof of concept &mdash; view as</span>
+  <div class="seg dark" id="roleSeg">
+    <button data-view="patient" class="on">Patient</button>
+    <button data-view="clinician">Clinician</button>
+    <button data-view="admin">Administrator</button>
+  </div>
+  <span class="spacer"></span>
+  <span id="switchExtra"></span>
+</div>
+
+<header class="apphead" id="appHead"></header>
+<nav class="appnav" id="appNav"></nav>
+
+<main class="appmain">
+  <div class="view on" id="v-patient"><div id="siteMain"></div></div>
+  <div class="view" id="v-clinician"><div id="clinRoot"></div></div>
+  <div class="view" id="v-admin"><div id="adminRoot"></div></div>
+</main>
+
+<footer style="max-width:1400px;margin:0 auto;padding:0 26px 40px;font-size:11.5px;color:var(--muted);line-height:1.6">
+  <div style="border-top:1px solid var(--line);padding-top:16px">
+    <b style="color:var(--ink-2)">Proof of concept.</b> Not a medical device and not for clinical use. All patients, programmes
+    and messages shown are fabricated demonstration data — no real patient information appears anywhere in this page.
+    Progression logic adapted from a return-to-running spreadsheet by Maciek Krolikowski, PT #8857, The Lab — Rehab + Performance.
+    Built by <a href="https://floor16.com" style="color:var(--accent);text-decoration:none;font-weight:600">Floor 16 Technologies</a>.
+  </div>
+</footer>
+
+<div class="scrim" id="scrim"><div class="modal" id="modal"></div></div>
+<div class="toast" id="toast"></div>
+
+<script>
+/* ==================================================================
+   CADENCE - proof of concept
+   Algorithm ported verbatim from "Return to Running Progression.xlsx"
+   with the sheet's known defects fixed behind admin-controlled flags.
+   ================================================================== */
+const DAYS   = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+const DAYSL  = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+const TODAY  = new Date(2026,7,18);                       // demo "now"
+const sum    = a => a.reduce((x,y)=>x+y,0);
+const r1     = n => Math.round(n*10)/10;
+const pct    = n => Math.round(n*100);
+
+/* ---------- clinic-wide algorithm settings (owned by the administrator) ---------- */
+const CFG = {
+  painStep:        0.025,   // sheet: 1 - 0.025 x NRS  -> 0 pain = 1.0, 10/10 = 0.75 weight
+  wDuring:         0.40,
+  wAfter:          0.40,
+  wBaseline:       0.20,
+  baselineNoValue: 0.50,    // sheet: "No" scores half
+  greenAt:         0.91,    // >= then progress
+  yellowAt:        0.90,    // >= then hold
+  deload:          0.10,    // else -10 %
+  capAtGoal:       true,    // FIX: never prescribe beyond the agreed goal volume
+  blankIsNotNo:    true,    // FIX: an unlogged run is excluded, not scored as "No"
+  minRunsToScore:  2,       // FIX: need this many logged runs before the week is graded
+  safetyStop:      true,    // FIX: hard red flags override an otherwise-green week
+  flagPainDuring:  7,
+  flagPainAfter:   5,
+  flagNoBaselineStreak: 2,
+  maxWeeklyStepKm: 8        // FIX: absolute cap on one week's jump
+};
+
+/* ---------- reference protocols the administrator maintains ---------- */
+const PROTOCOLS = [
+  {id:'tendo',  name:'Tendinopathy — conservative', red:0.35, inc:0.10, weeks:12,
+   note:'Load-tolerant tissue. Slower ramp; pain up to 4/10 during running is acceptable.', uses:14},
+  {id:'bone',   name:'Bone stress injury — cautious', red:0.50, inc:0.10, weeks:16,
+   note:'Any pain during running is a stop rule. Walk/run intervals for weeks 1–3.', uses:6},
+  {id:'std',    name:'General return to run (default)', red:0.30, inc:0.15, weeks:8,
+   note:'Maciek’s original spreadsheet defaults.', uses:31},
+  {id:'acl',    name:'Post-ACLR criterion-based', red:0.35, inc:0.15, weeks:10,
+   note:'Requires hop-test clearance before week 1. Volume ramp only after criteria are met.', uses:9}
+];
+
+/* ---------- the caseload ---------- */
+const PATIENTS = [
+  { id:'p1', name:'Sarah Nguyen', age:34, injury:'Mid-portion Achilles tendinopathy',
+    goal:[0,0,8,0,8,0,14], red:0.30, inc:0.15, weeks:10, protocol:'tendo', cur:5,
+    since:'22 Jun 2026', colour:'#0a0a0a',
+    logs:{ '1-2':{pd:2,pa:1,b:'yes'}, '1-4':{pd:1,pa:1,b:'yes'}, '1-6':{pd:2,pa:0,b:'yes'},
+           '2-2':{pd:3,pa:2,b:'yes'}, '2-4':{pd:2,pa:2,b:'yes'}, '2-6':{pd:3,pa:1,b:'yes'},
+           '3-2':{pd:5,pa:4,b:'no'},  '3-4':{pd:4,pa:4,b:'yes'}, '3-6':{pd:5,pa:3,b:'no'},
+           '4-2':{pd:2,pa:1,b:'yes'}, '4-4':{pd:2,pa:2,b:'yes'}, '4-6':{pd:1,pa:1,b:'yes'},
+           '5-2':{pd:2,pa:1,b:'yes'} } },
+
+  { id:'p2', name:'Dave Whitfield', age:41, injury:'Patellofemoral pain — right',
+    goal:[0,5,0,5,0,0,7], red:0.40, inc:0.10, weeks:8, protocol:'std', cur:3,
+    since:'3 Aug 2026', colour:'#3f3f46',
+    logs:{ '1-1':{pd:3,pa:3,b:'yes'}, '1-3':{pd:4,pa:4,b:'yes'}, '1-6':{pd:4,pa:5,b:'no'},
+           '2-1':{pd:5,pa:5,b:'no'},  '2-3':{pd:6,pa:4,b:'no'},  '2-6':{pd:5,pa:4,b:'yes'},
+           '3-1':{pd:4,pa:3,b:'yes'} } },
+
+  { id:'p3', name:'Priya Raman', age:27, injury:'Tibial bone stress reaction (grade 1)',
+    goal:[0,0,4,0,4,0,6], red:0.50, inc:0.10, weeks:16, protocol:'bone', cur:2,
+    since:'10 Aug 2026', colour:'#E31B23',
+    logs:{ '1-2':{pd:1,pa:2,b:'yes'}, '1-4':{pd:2,pa:2,b:'yes'}, '1-6':{pd:2,pa:1,b:'yes'},
+           '2-2':{pd:7,pa:6,b:'no'} } },
+
+  { id:'p4', name:'Marc Boucher', age:29, injury:'Post-ACLR (14 months) return to run',
+    goal:[0,4,0,4,0,4,6], red:0.35, inc:0.15, weeks:8, protocol:'acl', cur:7,
+    since:'6 Jul 2026', colour:'#52525b',
+    logs:{ '1-1':{pd:1,pa:0,b:'yes'}, '1-3':{pd:0,pa:1,b:'yes'}, '1-5':{pd:1,pa:0,b:'yes'}, '1-6':{pd:1,pa:1,b:'yes'},
+           '2-1':{pd:0,pa:0,b:'yes'}, '2-3':{pd:1,pa:1,b:'yes'}, '2-5':{pd:0,pa:0,b:'yes'}, '2-6':{pd:1,pa:0,b:'yes'},
+           '3-1':{pd:1,pa:1,b:'yes'}, '3-3':{pd:0,pa:0,b:'yes'}, '3-5':{pd:1,pa:0,b:'yes'}, '3-6':{pd:2,pa:1,b:'yes'},
+           '4-1':{pd:1,pa:0,b:'yes'}, '4-3':{pd:1,pa:1,b:'yes'}, '4-5':{pd:0,pa:1,b:'yes'}, '4-6':{pd:1,pa:1,b:'yes'},
+           '5-1':{pd:0,pa:0,b:'yes'}, '5-3':{pd:1,pa:0,b:'yes'}, '5-5':{pd:0,pa:0,b:'yes'}, '5-6':{pd:1,pa:1,b:'yes'},
+           '6-1':{pd:0,pa:1,b:'yes'}, '6-3':{pd:0,pa:0,b:'yes'}, '6-5':{pd:1,pa:0,b:'yes'}, '6-6':{pd:0,pa:0,b:'yes'},
+           '7-1':{pd:0,pa:0,b:'yes'}, '7-3':{pd:1,pa:0,b:'yes'} } },
+
+  { id:'p5', name:'Kelly Osei', age:38, injury:'Plantar fasciopathy — left',
+    goal:[0,0,5,0,5,0,8], red:0.30, inc:0.15, weeks:8, protocol:'std', cur:1,
+    since:'17 Aug 2026', colour:'#71717a', logs:{} },
+
+  { id:'p6', name:'Tom Ferreira', age:52, injury:'Proximal hamstring tendinopathy',
+    goal:[0,6,0,0,6,0,10], red:0.30, inc:0.15, weeks:10, protocol:'tendo', cur:4,
+    since:'27 Jul 2026', colour:'#27272a',
+    logs:{ '1-1':{pd:2,pa:2,b:'yes'}, '1-4':{pd:2,pa:1,b:'yes'}, '1-6':{pd:3,pa:2,b:'yes'},
+           '2-1':{pd:2,pa:2,b:'yes'}, '2-4':{pd:3,pa:2,b:'yes'}, '2-6':{pd:3,pa:3,b:'yes'},
+           '3-1':{pd:3,pa:2,b:'yes'}, '3-6':{pd:4,pa:3,b:'yes'},
+           '4-1':{pd:3,pa:3,b:'yes'} } }
+];
+
+/* ==================================================================
+   THE ENGINE  -  one function, and every screen reads from it
+   ================================================================== */
+function runScore(l, cfg){
+  if(!l) return null;
+  const d = Math.max(0, 1 - cfg.painStep * l.pd);
+  const a = Math.max(0, 1 - cfg.painStep * l.pa);
+  const b = l.b === 'yes' ? 1 : cfg.baselineNoValue;
+  return cfg.wDuring*d + cfg.wAfter*a + cfg.wBaseline*b;
+}
+
+function mondayOfWeek(d){
+  const x = new Date(d); const off = (x.getDay()+6)%7;
+  x.setDate(x.getDate()-off); x.setHours(0,0,0,0); return x;
+}
+
+function computeProgram(p, cfg){
+  const goalTotal = sum(p.goal);
+  const rel       = p.goal.map(g => goalTotal ? g/goalTotal : 0);
+  const runDays   = p.goal.map((g,i)=> g>0 ? i : -1).filter(i=>i>=0);
+  const wk0       = mondayOfWeek(TODAY); wk0.setDate(wk0.getDate() - (p.cur-1)*7);
+  const midnight  = new Date(TODAY); midnight.setHours(0,0,0,0);
+  const out       = [];
+  let vol         = goalTotal * (1 - p.red);
+
+  for(let w=1; w<=p.weeks; w++){
+    if(p.overrides && p.overrides[w]) vol = p.overrides[w].vol;   // clinician override wins
+    if(cfg.capAtGoal) vol = Math.min(vol, goalTotal);
+    const start = new Date(wk0); start.setDate(start.getDate()+(w-1)*7);
+    const days  = rel.map((rl,i)=>{
+      const km = vol*rl, key = w+'-'+i, log = p.logs[key] || null;
+      const dt = new Date(start); dt.setDate(dt.getDate()+i); dt.setHours(0,0,0,0);
+      return { i, key, km, log, date:dt, isRun:km>0,
+               score: km>0 ? runScore(log,cfg) : null,
+               isPast: dt < midnight, isToday: dt.getTime() === midnight.getTime() };
+    });
+
+    const prescribed = days.filter(d=>d.isRun);
+    const logged     = prescribed.filter(d=>d.log);
+    const missed     = prescribed.filter(d=>!d.log && d.isPast);
+    const future     = w > p.cur;
+
+    /* volume-weighted mean response score - SUMPRODUCT(km,score)/SUM(km) */
+    const pool  = cfg.blankIsNotNo ? logged : prescribed;
+    const wsum  = sum(pool.map(d=>d.km));
+    const score = wsum ? sum(pool.map(d => d.km * (d.score === null ? 0 : d.score))) / wsum : null;
+
+    /* red flags */
+    const flags = [];
+    logged.forEach(d=>{
+      if(d.log.pd >= cfg.flagPainDuring) flags.push({sev:'high', txt:DAYSL[d.i]+': pain '+d.log.pd+'/10 during the run'});
+      if(d.log.pa >= cfg.flagPainAfter)  flags.push({sev:'high', txt:DAYSL[d.i]+': next-morning pain '+d.log.pa+'/10'});
+    });
+    let streak = 0;
+    prescribed.forEach(d=>{
+      if(d.log && d.log.b === 'no'){
+        streak++;
+        if(streak >= cfg.flagNoBaselineStreak){ flags.push({sev:'med', txt:streak+' runs in a row where symptoms did not settle'}); streak = 0; }
+      } else if(d.log) streak = 0;
+    });
+    if(missed.length) flags.push({sev:'low', txt:missed.length+' prescribed run'+(missed.length>1?'s':'')+' not logged'});
+
+    /* decision */
+    let status = 'pending', mult = 1, why = '';
+    const graded = (!future) && (w < p.cur) && (logged.length >= Math.min(cfg.minRunsToScore, prescribed.length));
+    if(future){ status='future'; why='Projected — assumes the week is held.'; }
+    else if(w === p.cur){ status='active'; why = logged.length+' of '+prescribed.length+' runs logged so far.'; }
+    else if(!graded || score === null){ status='nodata'; why='Too few runs logged — volume carried forward unchanged.'; }
+    else if(score >= cfg.greenAt){ status='green';  mult = 1+p.inc;      why='Score '+score.toFixed(3)+' ≥ '+cfg.greenAt+' — increase '+pct(p.inc)+'%.'; }
+    else if(score >= cfg.yellowAt){ status='yellow'; mult = 1;            why='Score '+score.toFixed(3)+' ≥ '+cfg.yellowAt+' — hold volume.'; }
+    else { status='red'; mult = 1-cfg.deload; why='Score '+score.toFixed(3)+' < '+cfg.yellowAt+' — reduce '+pct(cfg.deload)+'%.'; }
+
+    let overridden = null;
+    if(cfg.safetyStop && flags.some(f=>f.sev==='high') && (status==='green'||status==='yellow'||status==='active')){
+      overridden = status; status = 'flag'; mult = 1-cfg.deload;
+      why = 'Safety stop — a red-flag run overrides the score.';
+    }
+
+    let next = vol*mult;
+    if(cfg.maxWeeklyStepKm && next-vol > cfg.maxWeeklyStepKm){ next = vol+cfg.maxWeeklyStepKm; why += ' Step capped at '+cfg.maxWeeklyStepKm+' km.'; }
+    if(cfg.capAtGoal) next = Math.min(next, goalTotal);
+
+    out.push({ w, vol, days, prescribed, logged, missed, score, status, mult, why, flags, start,
+               overridden, atGoal: Math.abs(vol-goalTotal) < 0.05,
+               pctGoal: goalTotal ? vol/goalTotal : 0, nextVol: next });
+    vol = next;
+  }
+  return { goalTotal, rel, runDays, weeks:out, current: out[p.cur-1],
+           protocol: PROTOCOLS.filter(x=>x.id===p.protocol)[0] };
+}
+
+const STATUS = {
+  green:  {lbl:'Progress',    cls:'pill-g', dot:'dot-g', col:'#1a9e55'},
+  yellow: {lbl:'Hold',        cls:'pill-a', dot:'dot-a', col:'#e3941b'},
+  red:    {lbl:'Reduce',      cls:'pill-r', dot:'dot-r', col:'#E31B23'},
+  flag:   {lbl:'Red flag',    cls:'pill-r', dot:'dot-r', col:'#a5060d'},
+  active: {lbl:'In progress', cls:'pill-b', dot:'dot-n', col:'#52525b'},
+  future: {lbl:'Projected',   cls:'pill-n', dot:'dot-n', col:'#e4e4e7'},
+  nodata: {lbl:'No data',     cls:'pill-n', dot:'dot-n', col:'#e4e4e7'},
+  pending:{lbl:'Pending',     cls:'pill-n', dot:'dot-n', col:'#e4e4e7'}
+};
+
+/* ---------- helpers ---------- */
+const $  = s => document.querySelector(s);
+const $$ = s => Array.prototype.slice.call(document.querySelectorAll(s));
+function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.add('on'); clearTimeout(t._x); t._x=setTimeout(function(){t.classList.remove('on');},2600); }
+function initials(n){ return n.split(' ').map(function(x){return x[0];}).slice(0,2).join(''); }
+function fmtDate(d){ return d.toLocaleDateString('en-CA',{month:'short',day:'numeric'}); }
+function closeModal(){ $('#scrim').classList.remove('on'); }
+function P(id){ return PATIENTS.filter(function(x){return x.id===id;})[0]; }
+
+let STATE = { view:'patient', patient:'p1', ptab:'today', siteWidth:'wide', clinTab:'caseload', chatWith:null, clinPatient:null, adminTab:'protocols', draft:null };
+
+/* ==================================================================
+   PATIENT WEB APP  -  a link the clinic sends; opens in any browser
+   ================================================================== */
+function nextRunOf(prog){
+  const wk = prog.current;
+  if(!wk) return null;
+  const today = wk.prescribed.filter(function(d){ return d.isToday && !d.log; })[0];
+  if(today) return today;
+  const due = wk.prescribed.filter(function(d){ return d.isPast && !d.log; })[0];
+  if(due) return due;
+  return wk.prescribed.filter(function(d){ return !d.log; })[0] || null;
+}
+
+const PTABS = [['today','Today'],['week','My progress'],['plan','My plan'],['messages','Messages'],['me','Account']];
+
+function renderPatient(){
+  const p = P(STATE.patient), prog = computeProgram(p, CFG), wk = prog.current;
+  $('#siteMain').innerHTML = ({today:wToday, week:wProgress, plan:wPlan, messages:wMessages, me:wAccount})[STATE.ptab](p, prog, wk);
+  const lg = $('#btnLog'); if(lg) lg.onclick = function(){ openLogModal(p, prog); };
+  if(STATE.ptab==='messages'){ bindComposer(p.id,'p'); scrollThread(); }
+}
+
+function dayStrip(wk){
+  return '<div class="dayrow">'+ wk.days.map(function(d){
+    const cls = !d.isRun ? 'rest' : (d.log ? 'done' : (d.isToday ? 'today' : ''));
+    const val = !d.isRun ? 'Rest' : (d.log ? '✓ done' : r1(d.km)+' km');
+    return '<div class="daycell '+cls+'"><div class="dn">'+DAYS[d.i]+'</div><div class="dd">'+fmtDate(d.date)+'</div><div class="dv">'+val+'</div></div>';
+  }).join('') +'</div>';
+}
+
+/* ---------------- Today ---------------- */
+function wToday(p, prog, wk){
+  const nx = nextRunOf(prog);
+  let hero;
+  if(!nx){
+    hero = '<div class="hero"><div><div class="eyebrow">Week '+p.cur+' complete</div>'+
+      '<div class="big">All done</div>'+
+      '<div class="sub">Every run logged. Your plan for next week appears here on Sunday evening.</div></div></div>';
+  } else {
+    const when = nx.isToday ? 'Today · '+DAYSL[nx.i]+' '+fmtDate(nx.date)
+               : (nx.isPast ? 'Still to log · '+DAYSL[nx.i]+' '+fmtDate(nx.date)
+                            : 'Your next run · '+DAYSL[nx.i]+' '+fmtDate(nx.date));
+    hero = '<div class="hero"><div><div class="eyebrow">'+when+'</div>'+
+      '<div class="big">'+r1(nx.km)+'<span> km</span></div>'+
+      '<div class="sub">Easy, conversational pace — you should be able to talk in full sentences. Stop the run if pain climbs above 5 out of 10.</div></div>'+
+      '<div><button class="btn" id="btnLog">'+
+      '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>'+
+      (nx.log ? 'Edit this run' : 'Log this run')+'</button></div></div>';
+  }
+
+  const highFlags = wk.flags.filter(function(f){ return f.sev==='high'; });
+  const prev = prog.weeks[p.cur-2];
+  const msg  = prev ? { green:'Last week went well, so this week steps up a little.',
+                        yellow:'We are holding your volume steady this week to let things settle.',
+                        red:'We have eased your volume back slightly. That is a normal, planned part of the programme — not a setback.',
+                        flag:'We have eased your volume back because one run was more painful than we want to see.' }[prev.status] : null;
+
+  return hero +
+    '<div class="pcard"><h4>Your week at a glance</h4><div class="sm" style="margin-bottom:12px">'+
+      fmtDate(wk.start)+' – '+fmtDate(wk.days[6].date)+' · '+r1(wk.vol)+' km total across '+wk.prescribed.length+' runs</div>'+
+      dayStrip(wk)+'</div>'+
+
+    '<div class="wgrid">'+
+      '<div><div class="pcard"><h4>This week&rsquo;s runs</h4><div class="sm" style="margin-bottom:6px">Log each run the same day if you can — the next morning answer can wait until the morning.</div>'+
+        wk.prescribed.map(function(d){
+          const st = d.log ? '<span class="pill pill-g">Logged</span>'
+                           : (d.isPast ? '<span class="pill pill-a">Not logged yet</span>' : '<span class="pill pill-n">Upcoming</span>');
+          const det = d.log ? 'Pain '+d.log.pd+'/10 during · '+d.log.pa+'/10 next morning · symptoms '+(d.log.b==='yes'?'settled':'still present')
+                            : 'Easy pace';
+          return '<div class="runrow"><div class="dot '+(d.log?'dot-g':'dot-n')+'"></div>'+
+            '<div style="flex:1;min-width:0"><div style="font-weight:640;font-size:13.5px">'+DAYSL[d.i]+' '+fmtDate(d.date)+' · '+r1(d.km)+' km</div>'+
+            '<div class="sm">'+det+'</div></div>'+st+'</div>';
+        }).join('') +'</div></div>'+
+
+      '<div>'+
+        (highFlags.length ? '<div class="pcard" style="border-color:#f0bcbc;background:var(--red-soft)">'+
+          '<h4 style="color:var(--red)">We have paused your progression</h4>'+
+          '<div class="sm" style="color:#8f2020">That last run was more painful than we want to see. Your volume will not increase this week, and your physiotherapist has been notified automatically.</div>'+
+          '<div class="sm" style="color:#8f2020;margin-top:8px">'+highFlags.map(function(f){return f.txt;}).join('<br>')+'</div>'+
+          '<button class="btn btn-sm" style="margin-top:11px" onclick="toast(\'Message drafted to your physiotherapist\')">Message Maciek</button></div>' : '')+
+
+        (msg ? '<div class="pcard"><h4>Why this week looks like this</h4><div class="sm">'+msg+'</div></div>' : '')+
+
+        '<div class="pcard"><h4>The rules we agreed</h4><div class="sm" style="line-height:1.8">'+
+          '&bull; Easy conversational pace throughout.<br>'+
+          '&bull; Stop the run if pain goes above 5/10.<br>'+
+          '&bull; Answer honestly — the plan adapts to what you tell it.<br>'+
+          '&bull; A sore week is information, not failure.</div></div>'+
+
+        '<div class="pcard"><h4>Something not right?</h4><div class="sm">Sharp pain, a limp, or swelling that lasts more than 24 hours — stop running and contact the clinic.</div>'+
+        '<div style="display:flex;gap:8px;margin-top:11px;flex-wrap:wrap"><button class="btn btn-sm" onclick="toast(\'Message drafted\')">Message the clinic</button>'+
+        '<a class="btn btn-sm" href="tel:5874140193">Call (587) 414-0193</a></div></div>'+
+      '</div></div>';
+}
+
+/* ---------------- Progress ---------------- */
+function wProgress(p, prog, wk){
+  const graded = prog.weeks.filter(function(w){ return ['green','yellow','red','flag'].indexOf(w.status)>=0; });
+  const maxV   = Math.max.apply(null, prog.weeks.map(function(w){return w.vol;}).concat([prog.goalTotal]));
+  const scale  = maxV * 1.18;                       // headroom for the value labels
+  const doneN  = wk.logged.length, totN = wk.prescribed.length;
+  const frac   = totN ? doneN/totN : 0, C = 2*Math.PI*46;
+  const totalKm = prog.weeks.slice(0,p.cur).reduce(function(a,w){ return a + sum(w.logged.map(function(d){return d.km;})); },0);
+
+  const tile = function(k,v,d){ return '<div class="card stat"><div class="k">'+k+'</div><div class="v">'+v+'</div><div class="d">'+d+'</div></div>'; };
+
+  return '<div class="wstats">'+
+      tile('This week', r1(wk.vol)+' km', 'across '+totN+' runs')+
+      tile('Of your goal', pct(wk.pctGoal)+'%', 'goal is '+prog.goalTotal+' km per week')+
+      tile('Weeks completed', graded.length, 'since '+p.since)+
+      tile('Distance logged', r1(totalKm)+' km', 'total across the programme')+
+    '</div>'+
+
+    '<div class="wgrid">'+
+      '<div class="pcard"><h4>Your weekly volume</h4><div class="sm" style="margin-bottom:14px">Each bar is one week. The dashed line is your goal of '+prog.goalTotal+' km.</div>'+
+        '<div class="bar-wrap" style="height:170px;position:relative">'+
+          '<div style="position:absolute;left:0;right:0;bottom:'+(17+ (prog.goalTotal/scale)*145)+'px;border-top:1.5px dashed #a1a1aa;pointer-events:none"></div>'+
+          prog.weeks.map(function(w){
+            const h = Math.round((w.vol/scale)*100);
+            return '<div class="bar" title="Week '+w.w+' — '+r1(w.vol)+' km">'+
+              '<div class="amt" style="color:'+(w.w<=p.cur?'var(--ink)':'var(--muted)')+'">'+r1(w.vol)+'</div>'+
+              '<div class="fill" style="height:'+h+'%;background:'+(w.w<=p.cur?STATUS[w.status].col:'#e4e4e7')+'"></div>'+
+              '<div class="cap">'+w.w+'</div></div>';
+          }).join('') +'</div>'+
+        '<div class="sm" style="margin-top:12px">Green weeks stepped up, amber held steady, red eased back. Grey weeks are still to come.</div></div>'+
+
+      '<div>'+
+        '<div class="pcard" style="text-align:center"><h4 style="margin-bottom:12px">This week</h4>'+
+          '<div class="ringwrap">'+
+            '<svg width="128" height="128" class="ring" viewBox="0 0 108 108">'+
+              '<circle cx="54" cy="54" r="46" fill="none" stroke="#ececee" stroke-width="11"/>'+
+              '<circle cx="54" cy="54" r="46" fill="none" stroke="url(#g1)" stroke-width="11" stroke-linecap="round" stroke-dasharray="'+(C*frac)+' '+C+'"/>'+
+              '<defs><linearGradient id="g1" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ff2f37"/><stop offset="1" stop-color="#E31B23"/></linearGradient></defs></svg>'+
+            '<div class="ringlabel"><div class="rv">'+doneN+'/'+totN+'</div><div class="rl">RUNS</div></div></div>'+
+          '<div class="sm" style="margin-top:14px">'+(doneN>=totN
+              ? 'All logged. Nice work.'
+              : (totN-doneN)+' still to log this week')+'</div></div>'+
+
+        '<div class="pcard"><h4>How each week has felt</h4>'+
+          (graded.length ? graded.slice(-6).map(function(w){
+            const words = {green:'Comfortable', yellow:'Manageable', red:'Sore', flag:'Too sore'}[w.status];
+            return '<div class="runrow"><div class="dot '+STATUS[w.status].dot+'"></div>'+
+              '<div style="flex:1;min-width:0"><div style="font-weight:640;font-size:13.5px">Week '+w.w+' · '+r1(w.vol)+' km</div>'+
+              '<div class="sm">'+w.logged.length+' of '+w.prescribed.length+' runs logged</div></div>'+
+              '<span class="pill '+STATUS[w.status].cls+'">'+words+'</span></div>';
+          }).join('') : '<div class="sm">Nothing to show yet — this fills in once you finish your first week.</div>')+
+        '</div></div></div>';
+}
+
+/* ---------------- Plan ---------------- */
+function wPlan(p, prog, wk){
+  return '<div class="wgrid">'+
+    '<div class="pcard"><h4>Week '+p.cur+' · '+r1(wk.vol)+' km</h4>'+
+      '<div class="sm" style="margin-bottom:12px">'+fmtDate(wk.start)+' – '+fmtDate(wk.days[6].date)+'</div>'+
+      wk.days.map(function(d){
+        if(!d.isRun) return '<div class="runrow"><div class="dot dot-n"></div><div style="flex:1"><div style="font-weight:600;font-size:13.5px;color:var(--muted)">'+DAYSL[d.i]+' '+fmtDate(d.date)+'</div>'+
+          '<div class="sm">Rest, or cross-train with something that does not aggravate it</div></div></div>';
+        return '<div class="runrow"><div class="dot '+(d.log?'dot-g':'dot-n')+'"></div>'+
+          '<div style="flex:1"><div style="font-weight:640;font-size:13.5px">'+DAYSL[d.i]+' '+fmtDate(d.date)+'</div>'+
+          '<div class="sm">Easy run'+(d.log?' — logged':'')+'</div></div><b style="font-size:15px">'+r1(d.km)+' km</b></div>';
+      }).join('') +'</div>'+
+
+    '<div>'+
+      '<div class="pcard" style="background:var(--surface-2);border-style:dashed;box-shadow:none">'+
+        '<div style="display:flex;gap:11px;align-items:flex-start">'+
+          '<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="2" style="flex:0 0 19px;margin-top:2px"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>'+
+          '<div><h4 style="color:var(--muted)">Week '+(p.cur+1)+' unlocks Sunday evening</h4>'+
+          '<div class="sm">It is built from how this week actually felt, so there is nothing to see yet.</div></div></div></div>'+
+
+      '<div class="pcard"><h4>Your goal</h4><div class="sm" style="margin-bottom:10px">Agreed with Maciek on '+p.since+'</div>'+
+        '<div class="kv"><span class="k">Weekly volume</span><span class="v">'+prog.goalTotal+' km</span></div>'+
+        '<div class="kv"><span class="k">Running days</span><span class="v">'+prog.runDays.map(function(i){return DAYS[i];}).join(' · ')+'</span></div>'+
+        '<div class="kv"><span class="k">Programme length</span><span class="v">'+p.weeks+' weeks</span></div>'+
+        '<div class="kv"><span class="k">Presentation</span><span class="v">'+p.injury+'</span></div></div>'+
+
+      '<div class="pcard"><h4>How your plan is built</h4><div class="sm">Every week we look at the pain you reported during and after each run, and whether your symptoms settled. '+
+        'If the week went well the distance goes up. If it was borderline we hold it. If it was sore we ease it back. '+
+        'You never need to work any of this out yourself — just answer the three questions honestly after each run.</div></div>'+
+    '</div></div>';
+}
+
+/* ---------------- Account ---------------- */
+function wAccount(p, prog, wk){
+  const set = function(t,d,on){ return '<div class="setrow"><div style="flex:1"><div class="st">'+t+'</div><div class="sd">'+d+'</div></div><div class="toggle '+(on?'on':'')+'"><i></i></div></div>'; };
+  return '<div class="wgrid">'+
+    '<div>'+
+      '<div class="pcard" style="display:flex;align-items:center;gap:16px">'+
+        '<div class="avatar" style="background:'+p.colour+';width:56px;height:56px;font-size:19px">'+initials(p.name)+'</div>'+
+        '<div><h4 style="font-size:17px">'+p.name+'</h4><div class="sm">'+p.injury+' · age '+p.age+'</div>'+
+        '<div class="pill pill-b" style="margin-top:7px">'+prog.protocol.name+'</div></div></div>'+
+
+      '<div class="pcard"><h4>Your physiotherapist</h4>'+
+        '<div class="runrow"><div class="avatar" style="background:var(--ink)">MK</div>'+
+        '<div style="flex:1"><div style="font-weight:640;font-size:13.5px">Maciek Krolikowski, MScPT</div>'+
+        '<div class="sm">Physiotherapist #8857 · The Lab — Rehab + Performance</div></div></div>'+
+        '<div style="display:flex;gap:8px;margin-top:11px;flex-wrap:wrap">'+
+          '<button class="btn btn-sm" onclick="toast(\'Message drafted\')">Send a message</button>'+
+          '<button class="btn btn-sm" onclick="toast(\'Booking page opened\')">Book a review</button></div></div>'+
+
+      '<div class="pcard"><h4>Your data</h4><div class="sm">Download everything you have logged, or ask the clinic to delete your record. Your information is stored in Canada and is never sold or shared.</div>'+
+        '<div style="display:flex;gap:8px;margin-top:11px;flex-wrap:wrap">'+
+        '<button class="btn btn-sm" onclick="toast(\'CSV downloaded\')">Download my runs</button>'+
+        '<button class="btn btn-sm" onclick="toast(\'Request sent to the clinic\')">Request deletion</button></div></div>'+
+    '</div>'+
+
+    '<div>'+
+      '<div class="pcard"><h4>Signing in</h4><div class="sm" style="margin-bottom:11px">There is no password to remember. Enter your email and we send a one-time sign-in link.</div>'+
+        '<div class="kv"><span class="k">Email</span><span class="v">'+p.name.split(' ')[0].toLowerCase()+'@example.com</span></div>'+
+        '<div class="kv"><span class="k">Signed in since</span><span class="v">14 Aug 2026</span></div>'+
+        '<div class="kv"><span class="k">This browser</span><span class="v">Stays signed in 30 days</span></div>'+
+        '<button class="btn btn-sm" style="margin-top:11px" onclick="toast(\'Signed out everywhere\')">Sign out everywhere</button></div>'+
+
+      '<div class="pcard"><h4>Email from the clinic</h4>'+
+        set('When next week&rsquo;s plan is ready','A short summary every Sunday evening.',true)+
+        set('When Maciek replies to a message','So you do not need to keep checking the portal.',true)+
+        set('If a run has not been logged','One reminder, the day after. Never more than that.',true)+
+      '</div>'+
+
+      '<div class="pcard"><h4>Preferences</h4>'+
+        '<div class="setrow"><div style="flex:1"><div class="st">Units</div><div class="sd">Distances shown in kilometres</div></div>'+
+        '<select style="width:120px;padding:6px 8px;border:1px solid var(--line);border-radius:7px"><option>Kilometres</option><option>Miles</option></select></div>'+
+        set('Share my data with the clinic','Consent given '+p.since+'. Withdrawing this ends the programme.',true)+
+      '</div>'+
+    '</div></div>';
+}
+
+/* ---------- the log-a-run flow ---------- */
+function openLogModal(p, prog){
+  const nx = nextRunOf(prog);
+  if(!nx) return;
+  STATE.draft = { key:nx.key, pd:2, pa:1, b:null, step:0, km:nx.km, day:nx.i };
+  drawLogModal(p);
+  $('#scrim').classList.add('on');
+}
+
+function drawLogModal(p){
+  const d = STATE.draft;
+  const face = function(v){ return v<=2?'🙂':(v<=4?'😐':(v<=6?'😕':(v<=8?'😖':'😣'))); };
+  const word = function(v){ return ['None','Barely there','Mild','Mild','Noticeable','Moderate','Moderate','Strong','Strong','Severe','Worst imaginable'][v]; };
+
+  $('#modal').innerHTML =
+    '<div class="modal-h"><div style="flex:1"><div style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:650">'+DAYSL[d.day]+' · '+r1(d.km)+' km</div>'+
+      '<h3 style="font-size:16px;margin-top:2px">Log your run</h3></div>'+
+      '<div class="stepdots"><i class="'+(d.step>=0?'on':'')+'"></i><i class="'+(d.step>=1?'on':'')+'"></i><i class="'+(d.step>=2?'on':'')+'"></i></div></div>'+
+
+    '<div class="modal-b">'+
+      '<div class="step '+(d.step===0?'on':'')+'">'+
+        '<h4 style="font-size:15.5px;margin-bottom:3px">How much pain during the run?</h4>'+
+        '<div style="font-size:12.5px;color:var(--muted);margin-bottom:20px">At its worst, while you were running.</div>'+
+        '<div style="display:flex;align-items:center;gap:14px;margin-bottom:14px"><div style="font-size:34px">'+face(d.pd)+'</div>'+
+          '<div><div class="painval">'+d.pd+'<span style="font-size:15px;color:var(--muted);font-weight:600">/10</span></div>'+
+          '<div style="font-size:12.5px;color:var(--muted);font-weight:600">'+word(d.pd)+'</div></div></div>'+
+        '<input type="range" min="0" max="10" step="1" value="'+d.pd+'" class="painslider" id="sl-pd">'+
+        '<div class="scaleends"><span>No pain</span><span>Worst imaginable</span></div></div>'+
+
+      '<div class="step '+(d.step===1?'on':'')+'">'+
+        '<h4 style="font-size:15.5px;margin-bottom:3px">And the next morning?</h4>'+
+        '<div style="font-size:12.5px;color:var(--muted);margin-bottom:20px">Your first few steps out of bed.</div>'+
+        '<div style="display:flex;align-items:center;gap:14px;margin-bottom:14px"><div style="font-size:34px">'+face(d.pa)+'</div>'+
+          '<div><div class="painval">'+d.pa+'<span style="font-size:15px;color:var(--muted);font-weight:600">/10</span></div>'+
+          '<div style="font-size:12.5px;color:var(--muted);font-weight:600">'+word(d.pa)+'</div></div></div>'+
+        '<input type="range" min="0" max="10" step="1" value="'+d.pa+'" class="painslider" id="sl-pa">'+
+        '<div class="scaleends"><span>No pain</span><span>Worst imaginable</span></div></div>'+
+
+      '<div class="step '+(d.step===2?'on':'')+'">'+
+        '<h4 style="font-size:15.5px;margin-bottom:3px">Are your symptoms back to normal?</h4>'+
+        '<div style="font-size:12.5px;color:var(--muted);margin-bottom:20px">Back to how they were before this run.</div>'+
+        '<div class="yn"><button id="yn-y" class="'+(d.b==='yes'?'on-y':'')+'">Yes, settled</button>'+
+        '<button id="yn-n" class="'+(d.b==='no'?'on-n':'')+'">No, still there</button></div>'+
+        '<div style="margin-top:16px;font-size:12px;color:var(--muted);line-height:1.55">Answer honestly. Saying &ldquo;no&rdquo; does not mean you failed — it tells the plan to give you more room.</div></div>'+
+    '</div>'+
+
+    '<div class="modal-f"><button class="btn" id="m-back" style="flex:0 0 auto">'+(d.step===0?'Cancel':'Back')+'</button>'+
+      '<button class="btn btn-p" id="m-next" style="flex:1;justify-content:center'+(d.step===2&&!d.b?';opacity:.45':'')+'">'+(d.step===2?'Save run':'Continue')+'</button></div>';
+
+  const pd = $('#sl-pd'), pa = $('#sl-pa');
+  if(pd) pd.oninput = function(e){ STATE.draft.pd = +e.target.value; drawLogModal(p); };
+  if(pa) pa.oninput = function(e){ STATE.draft.pa = +e.target.value; drawLogModal(p); };
+  const y=$('#yn-y'), n=$('#yn-n');
+  if(y) y.onclick = function(){ STATE.draft.b='yes'; drawLogModal(p); };
+  if(n) n.onclick = function(){ STATE.draft.b='no';  drawLogModal(p); };
+
+  $('#m-back').onclick = function(){ if(d.step===0) closeModal(); else { STATE.draft.step--; drawLogModal(p); } };
+  $('#m-next').onclick = function(){
+    if(d.step<2){ STATE.draft.step++; drawLogModal(p); return; }
+    if(!d.b) return;
+    p.logs[d.key] = { pd:d.pd, pa:d.pa, b:d.b };
+    closeModal();
+    const prog2 = computeProgram(p, CFG);
+    const s = runScore(p.logs[d.key], CFG);
+    toast('Run saved — response score ' + s.toFixed(2) + (prog2.current.flags.some(function(f){return f.sev==='high';}) ? ' · your physiotherapist has been alerted' : ''));
+    render();
+  };
+}
+
+/* ==================================================================
+   CLINICIAN  -  caseload triage, then one patient at a time
+   ================================================================== */
+function attention(p, prog){
+  const wk = prog.current;
+  if(wk.flags.some(function(f){return f.sev==='high';})) return {rank:0, cls:'pill-r', txt:'Red flag — review now'};
+  if(prog.weeks[p.cur-2] && prog.weeks[p.cur-2].status==='red') return {rank:1, cls:'pill-a', txt:'Deloaded last week'};
+  if(wk.missed.length) return {rank:2, cls:'pill-a', txt:wk.missed.length+' run(s) not logged'};
+  if(wk.atGoal && wk.logged.length===wk.prescribed.length) return {rank:3, cls:'pill-b', txt:'At goal — consider discharge'};
+  if(!wk.logged.length && p.cur===1) return {rank:4, cls:'pill-n', txt:'Awaiting first run'};
+  return {rank:5, cls:'pill-g', txt:'On track'};
+}
+
+function renderClinician(){
+  if(STATE.clinTab === 'messages') return renderMessages();
+  if(STATE.clinPatient) return renderPatientDetail();
+
+  const rows = PATIENTS.map(function(p){
+    const prog = computeProgram(p, CFG); return {p:p, prog:prog, att:attention(p,prog)};
+  }).sort(function(a,b){ return a.att.rank-b.att.rank; });
+
+  const needs = rows.filter(function(r){ return r.att.rank<=2; });
+  const flags = rows.filter(function(r){ return r.att.rank===0; });
+  const ready = rows.filter(function(r){ return r.att.rank===3; });
+
+  $('#clinRoot').innerHTML =
+    '<div class="grid sgrid" style="margin-bottom:18px">'+
+      statTile('Active programmes', PATIENTS.length, 'across 1 clinician') +
+      statTile('Need review today', needs.length, 'sorted to the top', needs.length?'var(--amber)':'') +
+      statTile('Red flags', flags.length, 'safety stop triggered', flags.length?'var(--red)':'') +
+      statTile('At goal volume', ready.length, 'ready for discharge', ready.length?'var(--blue)':'') +
+    '</div>'+
+
+    (needs.length ? '<div class="card" style="margin-bottom:18px"><div class="card-h">'+
+      '<h3>Needs your attention</h3><span class="hint">what the spreadsheet could never tell you without opening it</span></div>'+
+      '<div class="card-b" style="padding-top:8px">'+ needs.map(function(r){
+        const sev = r.att.rank===0 ? 'bad' : 'warn';
+        const wk  = r.prog.current;
+        const detail = r.att.rank===0
+          ? wk.flags.filter(function(f){return f.sev==='high';}).map(function(f){return f.txt;}).join(' · ')
+          : (r.att.rank===1 ? 'Week '+(r.p.cur-1)+' scored '+(r.prog.weeks[r.p.cur-2].score||0).toFixed(3)+' — volume reduced to '+r1(wk.vol)+' km'
+                            : wk.missed.map(function(d){return DAYSL[d.i];}).join(', ')+' not logged');
+        return '<div class="flagbox note '+sev+'" style="margin-bottom:8px">'+
+          '<div class="avatar" style="background:'+r.p.colour+';width:26px;height:26px;font-size:10px;flex:0 0 26px">'+initials(r.p.name)+'</div>'+
+          '<div style="flex:1"><b>'+r.p.name+'</b> — '+r.att.txt+'<br><span style="opacity:.85">'+detail+'</span></div>'+
+          '<button class="btn btn-sm" data-open="'+r.p.id+'">Open</button></div>';
+      }).join('') +'</div></div>' : '')+
+
+    '<div class="card"><div class="card-h"><h3>Caseload</h3><span class="spacer"></span>'+
+      '<button class="btn btn-sm btn-p" id="btnNew">+ New programme</button></div>'+
+      '<table><thead><tr><th>Patient</th><th>Presentation</th><th>Protocol</th><th>Week</th>'+
+      '<th>Volume</th><th>% of goal</th><th>Last week</th><th>Status</th><th></th></tr></thead><tbody>'+
+      rows.map(function(r){
+        const wk = r.prog.current, prev = r.prog.weeks[r.p.cur-2];
+        const ps = prev ? STATUS[prev.status] : null;
+        return '<tr class="click" data-open="'+r.p.id+'">'+
+          '<td><div style="display:flex;align-items:center;gap:10px"><div class="avatar" style="background:'+r.p.colour+'">'+initials(r.p.name)+'</div>'+
+            '<div><div style="font-weight:640">'+r.p.name+'</div><div style="font-size:11.5px;color:var(--muted)">since '+r.p.since+'</div></div></div></td>'+
+          '<td style="font-size:12.5px;color:var(--ink-2)">'+r.p.injury+'</td>'+
+          '<td><span class="pill pill-n">'+r.prog.protocol.name.split(' — ')[0]+'</span></td>'+
+          '<td class="mono">'+r.p.cur+' / '+r.p.weeks+'</td>'+
+          '<td class="mono"><b>'+r1(wk.vol)+'</b> km</td>'+
+          '<td><div style="display:flex;align-items:center;gap:7px"><div style="flex:1;height:6px;background:var(--surface-2);border-radius:99px;overflow:hidden;min-width:52px">'+
+            '<div style="height:100%;width:'+pct(wk.pctGoal)+'%;background:'+(wk.atGoal?'var(--blue)':'var(--accent)')+'"></div></div>'+
+            '<span class="mono" style="font-size:12px">'+pct(wk.pctGoal)+'%</span></div></td>'+
+          '<td>'+(ps ? '<span class="pill '+ps.cls+'"><span class="dot '+ps.dot+'"></span>'+ps.lbl+'</span>' : '<span class="pill pill-n">—</span>')+'</td>'+
+          '<td><span class="pill '+r.att.cls+'">'+r.att.txt+'</span></td>'+
+          '<td style="text-align:right;color:var(--muted)">›</td></tr>';
+      }).join('') +'</tbody></table></div>';
+
+  $$('[data-open]').forEach(function(el){ el.onclick=function(e){ e.stopPropagation(); STATE.clinPatient=el.dataset.open; render(); }; });
+  $('#btnNew').onclick = function(e){ e.stopPropagation(); newProgrammeModal(); };
+}
+
+function statTile(k,v,d,col){
+  return '<div class="card stat"><div class="k">'+k+'</div><div class="v" style="'+(col?'color:'+col:'')+'">'+v+'</div><div class="d">'+d+'</div></div>';
+}
+
+/* ---------- one patient ---------- */
+function renderPatientDetail(){
+  const p = P(STATE.clinPatient), prog = computeProgram(p, CFG), wk = prog.current;
+  const prev = prog.weeks[p.cur-2];
+  const maxV = Math.max.apply(null, prog.weeks.map(function(w){return w.vol;}).concat([prog.goalTotal]));
+
+  $('#clinRoot').innerHTML =
+    '<div style="display:flex;align-items:center;gap:14px;margin-bottom:18px">'+
+      '<button class="btn btn-sm" id="btnBack">‹ Caseload</button>'+
+      '<div class="avatar" style="background:'+p.colour+';width:42px;height:42px;font-size:15px">'+initials(p.name)+'</div>'+
+      '<div style="flex:1"><h2 style="font-size:19px">'+p.name+' <span style="font-weight:500;color:var(--muted);font-size:14px">· '+p.age+'</span></h2>'+
+      '<div style="font-size:12.5px;color:var(--muted)">'+p.injury+' · '+prog.protocol.name+' · started '+p.since+'</div></div>'+
+      '<button class="btn btn-sm" data-msgpt="'+p.id+'">'+
+        '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>Message</button>'+
+      '<button class="btn btn-sm" onclick="toast(\'Chart note copied to clipboard\')">Copy chart note</button>'+
+      '<button class="btn btn-sm" onclick="toast(\'PDF summary generated\')">Export PDF</button>'+
+    '</div>'+
+
+    '<div class="grid sgrid" style="margin-bottom:18px">'+
+      statTile('Week '+p.cur+' volume', r1(wk.vol)+' km', pct(wk.pctGoal)+'% of the '+prog.goalTotal+' km goal') +
+      statTile('Runs logged', wk.logged.length+' / '+wk.prescribed.length, 'this week') +
+      statTile('Last week score', prev && prev.score!==null ? prev.score.toFixed(3) : '—',
+               prev ? prev.why : 'no completed week yet',
+               prev ? STATUS[prev.status].col : '') +
+      statTile('Next week', prev||wk ? r1(wk.nextVol)+' km' : '—',
+               wk.nextVol>wk.vol ? '+'+r1(wk.nextVol-wk.vol)+' km' : (wk.nextVol<wk.vol ? r1(wk.nextVol-wk.vol)+' km' : 'held')) +
+    '</div>'+
+
+    (wk.flags.length ? '<div class="card" style="margin-bottom:18px"><div class="card-h"><h3>Flags this week</h3>'+
+      '<span class="hint">the spreadsheet has no equivalent</span></div><div class="card-b">'+
+      wk.flags.map(function(f){
+        const cls = f.sev==='high'?'bad':(f.sev==='med'?'warn':'');
+        return '<div class="flagbox note '+cls+'"><b style="text-transform:uppercase;font-size:10.5px;letter-spacing:.06em;flex:0 0 auto">'+f.sev+'</b><span>'+f.txt+'</span></div>';
+      }).join('')+
+      (wk.overridden ? '<div style="font-size:12.5px;color:var(--ink-2);margin-top:6px">Safety stop applied: the score alone would have said <b>'+STATUS[wk.overridden].lbl+'</b>.</div>' : '')+
+      '</div></div>' : '')+
+
+    '<div class="grid dgrid" style="align-items:start">'+
+      '<div>'+ weekTable(p, prog) + '</div>'+
+      '<div>'+ builderCard(p, prog) + volumeChart(p, prog, maxV) + mathsCard(p, prog) + '</div>'+
+    '</div>';
+
+  $('#btnBack').onclick = function(){ STATE.clinPatient=null; render(); };
+  $$('[data-msgpt]').forEach(function(el){ el.onclick=function(){ openChat(el.dataset.msgpt); }; });
+  bindBuilder(p);
+  $$('[data-week]').forEach(function(el){ el.onclick=function(){ STATE.openWeek = (STATE.openWeek===+el.dataset.week ? null : +el.dataset.week); render(); }; });
+  $$('[data-override]').forEach(function(el){ el.onclick=function(e){ e.stopPropagation(); overrideModal(p, +el.dataset.override); }; });
+}
+
+function weekTable(p, prog){
+  return '<div class="card"><div class="card-h"><h3>Week by week</h3>'+
+    '<span class="hint">click a week to see every run · this is the spreadsheet, readable</span></div>'+
+    '<table><thead><tr><th>Wk</th><th>Dates</th><th>Volume</th><th>Runs</th><th>Response score</th><th>Decision</th><th>Next</th><th></th></tr></thead><tbody>'+
+    prog.weeks.map(function(w){
+      const st = STATUS[w.status], open = STATE.openWeek===w.w;
+      const ov = p.overrides && p.overrides[w.w];
+      let row = '<tr class="click" data-week="'+w.w+'"'+(w.w===p.cur?' style="background:var(--accent-soft)"':'')+'>'+
+        '<td><b class="mono">'+w.w+'</b>'+(w.w===p.cur?' <span class="tag" style="background:var(--accent);color:#fff">now</span>':'')+'</td>'+
+        '<td style="font-size:12px;color:var(--muted);white-space:nowrap">'+fmtDate(w.start)+'</td>'+
+        '<td class="mono"><b>'+r1(w.vol)+'</b> km'+(w.atGoal?' <span class="tag" style="background:var(--blue-soft);color:var(--blue)">goal</span>':'')+
+          (ov?' <span class="tag" style="background:var(--amber-soft);color:var(--amber)">manual</span>':'')+'</td>'+
+        '<td class="mono" style="font-size:12.5px">'+w.logged.length+'/'+w.prescribed.length+'</td>'+
+        '<td class="mono">'+(w.score!==null ? '<b>'+w.score.toFixed(3)+'</b>' : '<span style="color:var(--muted)">—</span>')+'</td>'+
+        '<td><span class="pill '+st.cls+'"><span class="dot '+st.dot+'"></span>'+st.lbl+'</span></td>'+
+        '<td class="mono" style="font-size:12.5px">'+(w.status==='future'?'<span style="color:var(--muted)">'+r1(w.nextVol)+'</span>':'×'+w.mult.toFixed(2)+' → '+r1(w.nextVol))+'</td>'+
+        '<td style="text-align:right"><button class="btn btn-sm" data-override="'+w.w+'">Override</button></td></tr>';
+
+      if(open){
+        row += '<tr><td colspan="8" style="background:var(--surface-2);padding:14px 16px">'+
+          '<div style="font-size:12.5px;color:var(--ink-2);margin-bottom:10px">'+w.why+'</div>'+
+          '<table style="background:var(--surface);border:1px solid var(--line);border-radius:9px;overflow:hidden">'+
+          '<thead><tr><th>Day</th><th>Prescribed</th><th>Pain during</th><th>Pain next am</th><th>Back to baseline</th><th>Run score</th><th>Weight</th></tr></thead><tbody>'+
+          w.prescribed.map(function(d){
+            const share = w.vol ? d.km/w.vol : 0;
+            return '<tr><td><b>'+DAYSL[d.i]+'</b><br><span style="font-size:11px;color:var(--muted)">'+fmtDate(d.date)+'</span></td>'+
+              '<td class="mono">'+r1(d.km)+' km</td>'+
+              (d.log
+                ? '<td class="mono">'+d.log.pd+'/10</td><td class="mono">'+d.log.pa+'/10</td>'+
+                  '<td>'+(d.log.b==='yes'?'<span class="pill pill-g">Yes</span>':'<span class="pill pill-r">No</span>')+'</td>'+
+                  '<td class="mono"><b>'+d.score.toFixed(3)+'</b></td>'
+                : '<td colspan="4" style="color:var(--muted);font-style:italic">'+(d.isPast?'not logged — excluded from the score':'upcoming')+'</td>')+
+              '<td class="mono" style="color:var(--muted)">'+pct(share)+'%</td></tr>';
+          }).join('') +'</tbody></table></td></tr>';
+      }
+      return row;
+    }).join('') +'</tbody></table></div>';
+}
+
+function builderCard(p, prog){
+  return '<div class="card" style="margin-bottom:16px"><div class="card-h"><h3>Programme</h3>'+
+    '<span class="hint">edit live — everything recalculates</span></div><div class="card-b">'+
+    '<span class="lbl">Goal volume per day (km)</span>'+
+    '<div style="display:flex;gap:5px;margin-bottom:14px">'+ DAYS.map(function(d,i){
+      return '<div style="flex:1;text-align:center"><div style="font-size:10px;color:var(--muted);font-weight:700;margin-bottom:3px">'+d+'</div>'+
+        '<input type="number" min="0" step="0.5" value="'+p.goal[i]+'" data-goal="'+i+'" style="width:100%;padding:7px 2px;text-align:center;border:1px solid var(--line);border-radius:7px;font-weight:600"></div>';
+    }).join('') +'</div>'+
+    '<div class="kv" style="margin-bottom:12px"><span class="k">Goal weekly volume</span><span class="v">'+prog.goalTotal+' km over '+prog.runDays.length+' days</span></div>'+
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'+
+      '<label class="field" style="margin:0"><span class="lbl">Starting reduction</span><input type="number" min="0" max="90" step="5" value="'+pct(p.red)+'" data-set="red"></label>'+
+      '<label class="field" style="margin:0"><span class="lbl">Weekly increase</span><input type="number" min="0" max="50" step="1" value="'+pct(p.inc)+'" data-set="inc"></label>'+
+      '<label class="field" style="margin:0"><span class="lbl">Programme weeks</span><input type="number" min="2" max="26" step="1" value="'+p.weeks+'" data-set="weeks"></label>'+
+      '<label class="field" style="margin:0"><span class="lbl">Currently in week</span><input type="number" min="1" max="'+p.weeks+'" step="1" value="'+p.cur+'" data-set="cur"></label>'+
+    '</div>'+
+    '<div class="note" style="margin-top:6px">Week 1 = '+prog.goalTotal+' × (1 − '+pct(p.red)+'%) = <b>'+r1(prog.weeks[0].vol)+' km</b>. '+
+    'At '+pct(p.inc)+'% per green week, the goal is reached in <b>'+weeksToGoal(p)+' consecutive green weeks</b>.</div>'+
+    '</div></div>';
+}
+
+function weeksToGoal(p){
+  if(p.inc<=0) return '∞';
+  return Math.ceil(Math.log(1/(1-p.red))/Math.log(1+p.inc));
+}
+
+function volumeChart(p, prog, maxV){
+  return '<div class="card" style="margin-bottom:16px"><div class="card-h"><h3>Volume trajectory</h3></div><div class="card-b">'+
+    '<div class="bar-wrap" style="height:150px">'+ prog.weeks.map(function(w){
+      const h = Math.round((w.vol/(maxV*1.18))*100);
+      return '<div class="bar" title="Week '+w.w+' — '+r1(w.vol)+' km">'+
+        '<div class="amt" style="color:'+(w.w<=p.cur?'var(--ink)':'var(--muted)')+';font-size:9.5px">'+r1(w.vol)+'</div>'+
+        '<div class="fill" style="height:'+h+'%;background:'+STATUS[w.status].col+';'+(w.w>p.cur?'opacity:.55':'')+'"></div>'+
+        '<div class="cap">'+w.w+'</div></div>';
+    }).join('') +'</div>'+
+    '<div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:12px;font-size:11.5px;color:var(--muted)">'+
+      ['green','yellow','red','flag','future'].map(function(k){
+        return '<span style="display:inline-flex;align-items:center;gap:5px"><span style="width:9px;height:9px;border-radius:3px;background:'+STATUS[k].col+'"></span>'+STATUS[k].lbl+'</span>';
+      }).join('') +'</div></div></div>';
+}
+
+function mathsCard(p, prog){
+  return '<div class="card"><div class="card-h"><h3>How the decision is made</h3>'+
+    '<span class="hint">ported from columns L &amp; M</span></div><div class="card-b" style="font-size:12.5px;line-height:1.65;color:var(--ink-2)">'+
+    '<div style="background:var(--surface-2);border:1px solid var(--line);border-radius:9px;padding:11px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11.5px;margin-bottom:12px">'+
+      'run score = 0.4·(1 − 0.025·P<sub>during</sub>)<br>'+
+      '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;+ 0.4·(1 − 0.025·P<sub>after</sub>)<br>'+
+      '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;+ 0.2·(baseline ? 1 : 0.5)<br><br>'+
+      'week score = Σ(km · score) ÷ Σ(km)</div>'+
+    '<div class="kv"><span class="k">≥ '+CFG.greenAt+'</span><span class="v" style="color:var(--green)">increase '+pct(p.inc)+'%</span></div>'+
+    '<div class="kv"><span class="k">≥ '+CFG.yellowAt+'</span><span class="v" style="color:var(--amber)">hold</span></div>'+
+    '<div class="kv"><span class="k">below '+CFG.yellowAt+'</span><span class="v" style="color:var(--red)">reduce '+pct(CFG.deload)+'%</span></div>'+
+    '<div class="note" style="margin-top:12px">When symptoms return to baseline the score simplifies to <b>1 − 0.01·(P<sub>during</sub> + P<sub>after</sub>)</b>. '+
+    'So the rule you are actually applying is: <b>settled, and combined pain ≤ 9 → progress</b>; combined pain = 10 → hold; anything else → deload.</div>'+
+    '</div></div>';
+}
+
+function bindBuilder(p){
+  $$('[data-goal]').forEach(function(el){
+    el.onchange = function(){ p.goal[+el.dataset.goal] = Math.max(0, +el.value||0); render(); };
+  });
+  $$('[data-set]').forEach(function(el){
+    el.onchange = function(){
+      const k = el.dataset.set, v = +el.value||0;
+      if(k==='red') p.red = Math.min(0.9, Math.max(0, v/100));
+      if(k==='inc') p.inc = Math.min(0.5, Math.max(0, v/100));
+      if(k==='weeks'){ p.weeks = Math.max(2, Math.min(26, v)); p.cur = Math.min(p.cur, p.weeks); }
+      if(k==='cur')  p.cur   = Math.max(1, Math.min(p.weeks, v));
+      render();
+    };
+  });
+}
+
+function overrideModal(p, w){
+  const prog = computeProgram(p, CFG), wk = prog.weeks[w-1];
+  $('#modal').innerHTML =
+    '<div class="modal-h"><div style="flex:1"><div style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:650">Week '+w+'</div>'+
+      '<h3 style="font-size:16px;margin-top:2px">Override the algorithm</h3></div></div>'+
+    '<div class="modal-b">'+
+      '<div class="note" style="margin-bottom:14px">The algorithm prescribed <b>'+r1(wk.vol)+' km</b>. '+(wk.why||'')+'</div>'+
+      '<label class="field"><span class="lbl">Set weekly volume (km)</span><input type="number" step="0.5" value="'+r1(wk.vol)+'" id="ovVal"></label>'+
+      '<label class="field"><span class="lbl">Clinical reason (required — stored in the audit log)</span>'+
+        '<select id="ovWhy"><option>Patient reported an unrelated illness</option><option>Race or event in the calendar</option>'+
+        '<option>Objective testing supports a faster ramp</option><option>Symptoms worse than the score suggests</option>'+
+        '<option>Travel / access to running surface</option><option>Other — free text</option></select></label>'+
+      '<div style="font-size:12px;color:var(--muted);line-height:1.55">The override is recorded against your licence number and shown on the week as “manual”. '+
+      'Subsequent weeks continue to be calculated from the overridden value.</div></div>'+
+    '<div class="modal-f"><button class="btn" onclick="closeModal()">Cancel</button>'+
+      '<button class="btn btn-p" id="ovSave" style="flex:1;justify-content:center">Apply override</button></div>';
+  $('#ovSave').onclick = function(){
+    p.overrides = p.overrides || {};
+    p.overrides[w] = { vol: +$('#ovVal').value, why: $('#ovWhy').value, by:'M. Krolikowski #8857' };
+    closeModal(); toast('Week '+w+' overridden — logged to audit trail'); render();
+  };
+  $('#scrim').classList.add('on');
+}
+
+function newProgrammeModal(){
+  $('#modal').innerHTML =
+    '<div class="modal-h"><div style="flex:1"><div style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:650">In-session, about two minutes</div>'+
+    '<h3 style="font-size:16px;margin-top:2px">New return-to-run programme</h3></div></div>'+
+    '<div class="modal-b">'+
+      '<label class="field"><span class="lbl">Patient</span><input placeholder="Search or invite by email"></label>'+
+      '<label class="field"><span class="lbl">Protocol template</span><select>'+
+        PROTOCOLS.map(function(x){return '<option>'+x.name+'</option>';}).join('')+'</select></label>'+
+      '<div class="note" style="margin-bottom:14px">Choosing a template pre-fills the starting reduction, weekly increase and programme length. You still agree the goal volume and running days with the patient.</div>'+
+      '<span class="lbl">Goal volume per day (km)</span>'+
+      '<div style="display:flex;gap:5px;margin-bottom:14px">'+DAYS.map(function(d){
+        return '<div style="flex:1;text-align:center"><div style="font-size:10px;color:var(--muted);font-weight:700;margin-bottom:3px">'+d+'</div>'+
+        '<input type="number" value="0" style="width:100%;padding:7px 2px;text-align:center;border:1px solid var(--line);border-radius:7px"></div>';
+      }).join('')+'</div>'+
+      '<div class="note">The patient receives an email invite with a link to the portal. Their first week opens on the next Monday.</div></div>'+
+    '<div class="modal-f"><button class="btn" onclick="closeModal()">Cancel</button>'+
+      '<button class="btn btn-p" style="flex:1;justify-content:center" onclick="closeModal();toast(\'Invite sent — programme starts Monday\')">Create &amp; invite</button></div>';
+  $('#scrim').classList.add('on');
+}
+
+/* ==================================================================
+   ADMINISTRATOR  -  protocols, accounts, algorithm, clinic
+   ================================================================== */
+const STAFF = [
+  {n:'Maciek Krolikowski', r:'Clinician · Owner', e:'maciek@thelabrehabandperformance.com', lic:'PT #8857', pts:6, last:'2 minutes ago', st:'Active', mfa:true},
+  {n:'Jordan Bell',        r:'Clinician',         e:'jordan@thelabrehabandperformance.com', lic:'PT #10422', pts:4, last:'Yesterday',   st:'Active', mfa:true},
+  {n:'Amrit Sandhu',       r:'Clinician',         e:'amrit@thelabrehabandperformance.com',  lic:'PT #11930', pts:0, last:'Never',      st:'Invited', mfa:false},
+  {n:'Rachel Doyle',       r:'Front desk',        e:'reception@thelabrehabandperformance.com', lic:'—',      pts:0, last:'3 hours ago', st:'Active', mfa:true},
+  {n:'Dr. Ellen Poirier',  r:'Referring physician · read-only', e:'epoirier@calgaryortho.ca', lic:'MD', pts:2, last:'6 days ago', st:'Active', mfa:true}
+];
+
+const AUDIT = [
+  {t:'today 09:14', who:'M. Krolikowski', what:'Applied safety stop override — Priya Raman, week 2', sev:'high'},
+  {t:'today 08:02', who:'system',         what:'Week rollover computed for 6 active programmes', sev:'low'},
+  {t:'yesterday',   who:'M. Krolikowski', what:'Edited goal volume 26 → 30 km — Sarah Nguyen', sev:'med'},
+  {t:'yesterday',   who:'J. Bell',        what:'Exported PDF summary — 1 patient record', sev:'med'},
+  {t:'15 Aug',      who:'admin',          what:'Protocol “Bone stress injury — cautious” weekly increase 15% → 10%', sev:'high'},
+  {t:'14 Aug',      who:'admin',          what:'Invited Amrit Sandhu (Clinician)', sev:'low'}
+];
+
+function renderAdmin(){
+  $('#adminRoot').innerHTML = '<div id="adminBody"></div>';
+  ({protocols:adProtocols, algorithm:adAlgorithm, accounts:adAccounts, clinic:adClinic})[STATE.adminTab]();
+}
+
+function adProtocols(){
+  $('#adminBody').innerHTML =
+    '<div class="note" style="margin-bottom:16px">A protocol is a saved set of defaults. The clinician picks one at the start of a programme and can still adjust the goal volume and running days per patient — but the thresholds and the safety rules are yours, not theirs.</div>'+
+    '<div class="card"><div class="card-h"><h3>Protocol templates</h3><span class="spacer"></span>'+
+      '<button class="btn btn-sm btn-p" onclick="toast(\'Protocol editor\')">+ New protocol</button></div>'+
+      '<table><thead><tr><th>Name</th><th>Starting reduction</th><th>Weekly increase</th><th>Length</th>'+
+      '<th>Weeks to goal</th><th>In use</th><th>Guidance shown to clinician</th><th></th></tr></thead><tbody>'+
+      PROTOCOLS.map(function(x){
+        const wtg = Math.ceil(Math.log(1/(1-x.red))/Math.log(1+x.inc));
+        return '<tr><td><b>'+x.name+'</b></td><td class="mono">'+pct(x.red)+'%</td><td class="mono">'+pct(x.inc)+'%</td>'+
+          '<td class="mono">'+x.weeks+' wks</td>'+
+          '<td class="mono">'+wtg+'<span style="color:var(--muted)"> green weeks</span></td>'+
+          '<td><span class="pill pill-n">'+x.uses+' programmes</span></td>'+
+          '<td style="font-size:12px;color:var(--ink-2);max-width:300px">'+x.note+'</td>'+
+          '<td style="text-align:right"><button class="btn btn-sm" onclick="toast(\'Edit protocol\')">Edit</button></td></tr>';
+      }).join('') +'</tbody></table></div>'+
+
+    '<div class="card" style="margin-top:16px"><div class="card-h"><h3>Why “weeks to goal” matters</h3></div><div class="card-b">'+
+      '<div class="note warn">The original spreadsheet defaults — 30% reduction, 15% weekly increase — reach the goal volume in <b>3 consecutive green weeks</b>. '+
+      'An 8-week grid therefore only makes sense for a patient who has several hold or deload weeks along the way. '+
+      'Surfacing this number when a protocol is created stops a programme being set up that mathematically finishes in a fortnight.</div></div></div>';
+}
+
+function adAlgorithm(){
+  const rows = [
+    ['painStep','Pain scaling per NRS point','0.025 — a 10/10 run still contributes 0.75 of its pain weight',false],
+    ['wDuring','Weight — pain during the run','0.40',false],
+    ['wAfter','Weight — pain next morning','0.40',false],
+    ['wBaseline','Weight — symptoms back to baseline','0.20',false],
+    ['greenAt','Progress threshold','Score at or above this increases volume',false],
+    ['yellowAt','Hold threshold','Score at or above this holds volume',false],
+    ['deload','Deload amount','Applied when the week falls below the hold threshold',false]
+  ];
+  const fixes = [
+    ['blankIsNotNo','An unlogged run is excluded, not scored as “No”',
+     'In the spreadsheet a blank row still enters SUMPRODUCT as zero and quietly caps the week at 0.90. A missing answer is missing data, not a bad week.'],
+    ['minRunsToScore','Require a minimum number of logged runs before grading a week',
+     'One logged run out of three should not decide the next week for the patient.'],
+    ['capAtGoal','Never prescribe beyond the agreed goal volume',
+     'The spreadsheet keeps multiplying past 100% of goal. Cap it and mark the patient as ready for discharge instead.'],
+    ['safetyStop','Hard red flags override an otherwise-green week',
+     'A 9/10 run currently costs 10% of volume. A single severe run should stop progression and page the clinician.'],
+    ['maxWeeklyStepKm','Cap the absolute size of one weekly jump',
+     'A 15% increase on 60 km is 9 km in one week. A percentage rule needs an absolute ceiling.']
+  ];
+
+  $('#adminBody').innerHTML =
+    '<div class="grid g2" style="align-items:start">'+
+      '<div class="card"><div class="card-h"><h3>Scoring model</h3><span class="hint">applies clinic-wide</span></div><div class="card-b">'+
+        rows.map(function(r){
+          return '<div class="setrow"><div style="flex:1"><div class="st">'+r[1]+'</div><div class="sd">'+r[2]+'</div></div>'+
+            '<input type="number" step="0.005" value="'+CFG[r[0]]+'" data-cfg="'+r[0]+'" style="width:78px;padding:6px 8px;border:1px solid var(--line);border-radius:7px;text-align:right;font-weight:600"></div>';
+        }).join('')+
+        '<div class="note" style="margin-top:12px"><b>Change control.</b> Editing these values re-grades only future weeks. Historical decisions keep the thresholds that were in force when they were made, and the change is written to the audit log.</div>'+
+      '</div></div>'+
+
+      '<div class="card"><div class="card-h"><h3>Corrections to the original sheet</h3>'+
+        '<span class="hint">each one can be switched off</span></div><div class="card-b">'+
+        fixes.map(function(f){
+          const on = !!CFG[f[0]];
+          return '<div class="setrow"><div style="flex:1"><div class="st">'+f[1]+'</div><div class="sd">'+f[2]+'</div></div>'+
+            '<div class="toggle '+(on?'on':'')+'" data-tog="'+f[0]+'"><i></i></div></div>';
+        }).join('')+
+        '<div class="note warn" style="margin-top:12px"><b>Also found in the workbook:</b> cell <b>L4</b> (week 1, Monday) scores pain with 0.05 per point and 0.75 for “No”, while every other run uses 0.025 and 0.5. '+
+        'One run in the programme was being graded on a different scale. Corrected here.</div>'+
+        '<div class="note bad" style="margin-top:9px"><b>And:</b> the week 4–8 block in columns R–W compares a response score against 1.05 and reads the Green/Yellow/Red cells, which are empty — so weeks 6 to 8 never progressed. That block is replaced by the engine above.</div>'+
+      '</div></div>'+
+    '</div>';
+
+  $$('[data-tog]').forEach(function(el){ el.onclick=function(){ CFG[el.dataset.tog] = !CFG[el.dataset.tog]; toast('Setting changed — audit logged'); render(); }; });
+  $$('[data-cfg]').forEach(function(el){ el.onchange=function(){ CFG[el.dataset.cfg] = +el.value; toast('Threshold updated — audit logged'); render(); }; });
+}
+
+function adAccounts(){
+  const active = PATIENTS.length;
+  $('#adminBody').innerHTML =
+    '<div class="grid sgrid" style="margin-bottom:18px">'+
+      statTile('Staff seats', STAFF.length+' / 8', '3 clinician licences in use')+
+      statTile('Patient accounts', active, '1 invited, not yet activated')+
+      statTile('MFA enforced', '4 / 5', 'Amrit Sandhu has not enrolled', 'var(--amber)')+
+      statTile('Data region', 'ca-central', 'Montréal — records never leave Canada')+
+    '</div>'+
+
+    '<div class="card" style="margin-bottom:16px"><div class="card-h"><h3>Staff accounts</h3><span class="spacer"></span>'+
+      '<button class="btn btn-sm" onclick="toast(\'SSO configuration\')">Configure SSO</button>'+
+      '<button class="btn btn-sm btn-p" onclick="toast(\'Invite sent\')">+ Invite staff</button></div>'+
+      '<table><thead><tr><th>Name</th><th>Role</th><th>Email</th><th>Registration</th><th>Patients</th><th>MFA</th><th>Last active</th><th>Status</th><th></th></tr></thead><tbody>'+
+      STAFF.map(function(s){
+        return '<tr><td><div style="display:flex;align-items:center;gap:10px"><div class="avatar" style="background:#3f3f46">'+initials(s.n)+'</div><b>'+s.n+'</b></div></td>'+
+          '<td style="font-size:12.5px;color:var(--ink-2)">'+s.r+'</td><td style="font-size:12.5px;color:var(--muted)">'+s.e+'</td>'+
+          '<td class="mono" style="font-size:12.5px">'+s.lic+'</td><td class="mono">'+s.pts+'</td>'+
+          '<td>'+(s.mfa?'<span class="pill pill-g">on</span>':'<span class="pill pill-a">not enrolled</span>')+'</td>'+
+          '<td style="font-size:12.5px;color:var(--muted)">'+s.last+'</td>'+
+          '<td><span class="pill '+(s.st==='Active'?'pill-g':'pill-n')+'">'+s.st+'</span></td>'+
+          '<td style="text-align:right"><button class="btn btn-sm" onclick="toast(\'Manage access\')">Manage</button></td></tr>';
+      }).join('') +'</tbody></table></div>'+
+
+    '<div class="card" style="margin-bottom:16px"><div class="card-h"><h3>Patient accounts</h3>'+
+      '<span class="hint">the administrator sees adherence and account state — never a clinical note</span></div>'+
+      '<table><thead><tr><th>Patient</th><th>Clinician</th><th>Account</th><th>Programme</th><th>Runs logged</th><th>Adherence</th><th>Consent</th><th></th></tr></thead><tbody>'+
+      PATIENTS.map(function(p){
+        const prog = computeProgram(p, CFG);
+        const done = prog.weeks.slice(0,p.cur).reduce(function(a,w){return a+w.logged.length;},0);
+        const due  = prog.weeks.slice(0,p.cur).reduce(function(a,w){return a+w.prescribed.filter(function(d){return d.isPast||d.log;}).length;},0);
+        const adh  = due ? done/due : 0;
+        return '<tr><td><div style="display:flex;align-items:center;gap:10px"><div class="avatar" style="background:'+p.colour+'">'+initials(p.name)+'</div><b>'+p.name+'</b></div></td>'+
+          '<td style="font-size:12.5px">M. Krolikowski</td>'+
+          '<td>'+(p.cur===1 && !done ? '<span class="pill pill-a">invited</span>' : '<span class="pill pill-g">active</span>')+'</td>'+
+          '<td class="mono" style="font-size:12.5px">wk '+p.cur+' / '+p.weeks+'</td><td class="mono">'+done+'</td>'+
+          '<td><div style="display:flex;align-items:center;gap:7px"><div style="flex:1;height:6px;background:var(--surface-2);border-radius:99px;overflow:hidden;min-width:52px">'+
+            '<div style="height:100%;width:'+pct(adh)+'%;background:'+(adh>0.85?'var(--green)':(adh>0.6?'var(--amber)':'var(--red)'))+'"></div></div>'+
+            '<span class="mono" style="font-size:12px">'+pct(adh)+'%</span></div></td>'+
+          '<td><span class="pill pill-n">'+p.since+'</span></td>'+
+          '<td style="text-align:right"><button class="btn btn-sm" onclick="toast(\'Reset link sent\')">Reset access</button></td></tr>';
+      }).join('') +'</tbody></table></div>'+
+
+    '<div class="card"><div class="card-h"><h3>Audit log</h3><span class="hint">every clinical override and every settings change</span>'+
+      '<span class="spacer"></span><button class="btn btn-sm" onclick="toast(\'Full log exported\')">Export</button></div>'+
+      '<table><thead><tr><th>When</th><th>Who</th><th>Event</th><th></th></tr></thead><tbody>'+
+      AUDIT.map(function(a){
+        const c = a.sev==='high'?'pill-r':(a.sev==='med'?'pill-a':'pill-n');
+        return '<tr><td style="font-size:12.5px;color:var(--muted);white-space:nowrap">'+a.t+'</td>'+
+          '<td style="font-size:12.5px"><b>'+a.who+'</b></td><td style="font-size:12.5px;color:var(--ink-2)">'+a.what+'</td>'+
+          '<td style="text-align:right"><span class="pill '+c+'">'+a.sev+'</span></td></tr>';
+      }).join('') +'</tbody></table></div>';
+}
+
+function adClinic(){
+  const set = function(t,d,on){ return '<div class="setrow"><div style="flex:1"><div class="st">'+t+'</div><div class="sd">'+d+'</div></div><div class="toggle '+(on?'on':'')+'"><i></i></div></div>'; };
+  $('#adminBody').innerHTML =
+    '<div class="grid g2" style="align-items:start">'+
+      '<div class="card"><div class="card-h"><h3>Clinic</h3></div><div class="card-b">'+
+        '<label class="field"><span class="lbl">Clinic name</span><input value="The Lab — Rehab + Performance"></label>'+
+        '<label class="field"><span class="lbl">Address</span><input value="#1401-11501 Buffalo Run Blvd, Tsuut’ina AB"></label>'+
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'+
+          '<label class="field" style="margin:0"><span class="lbl">Units</span><select><option>Kilometres</option><option>Miles</option><option>Minutes (time-based)</option></select></label>'+
+          '<label class="field" style="margin:0"><span class="lbl">Week starts</span><select><option>Monday</option><option>Sunday</option></select></label>'+
+          '<label class="field" style="margin:0"><span class="lbl">Rollover time</span><select><option>Sunday 20:00 local</option><option>Monday 06:00 local</option></select></label>'+
+          '<label class="field" style="margin:0"><span class="lbl">Brand colour</span><input value="#E31B23"></label>'+
+        '</div></div></div>'+
+
+      '<div class="card"><div class="card-h"><h3>Notifications</h3></div><div class="card-b">'+
+        set('Alert the clinician on a red flag','Email plus a portal notification within 15 minutes of a flagged run.',true)+
+        set('Daily caseload digest','07:30 email listing everyone who needs review.',true)+
+        set('Email patients who have not logged','After 24 hours, once only.',true)+
+        set('Weekly plan notification','Sunday evening when the next week is generated.',true)+
+        set('Notify on discharge-ready','When a patient holds goal volume for a full week.',false)+
+      '</div></div>'+
+
+      '<div class="card" style="margin-top:16px"><div class="card-h"><h3>Privacy &amp; retention</h3></div><div class="card-b">'+
+        '<div class="setrow"><div style="flex:1"><div class="st">Data residency</div><div class="sd">All personal health information stored in Canada.</div></div><span class="pill pill-g">ca-central-1</span></div>'+
+        '<div class="setrow"><div style="flex:1"><div class="st">Retention</div><div class="sd">Records kept for the regulated minimum, then destroyed.</div></div>'+
+          '<select style="width:150px;padding:6px 8px;border:1px solid var(--line);border-radius:7px"><option>10 years (AB adult)</option><option>Until age 20 (minor)</option><option>Custom</option></select></div>'+
+        set('Require MFA for all staff','Blocks sign-in until enrolled.',true)+
+        set('Allow patient data export','Patients can download their own run history.',true)+
+        set('Anonymised outcome reporting','Contribute de-identified progressions to clinic-level benchmarks.',false)+
+      '</div></div>'+
+
+      '<div class="card" style="margin-top:16px"><div class="card-h"><h3>Integrations</h3><span class="hint">phase two</span></div><div class="card-b">'+
+        set('Practice management (Jane App)','Pull the patient list and push a chart note on discharge.',false)+
+        set('Garmin / Strava import','Confirm the run actually happened and at what distance.',false)+
+        set('Wearable load metrics','Cadence, ground contact time, and weekly acute:chronic ratio.',false)+
+        '<div class="note" style="margin-top:12px">Importing actual distance would let the score be weighted by <b>what the patient ran</b> rather than what was prescribed — the single biggest accuracy gain available.</div>'+
+      '</div></div>'+
+    '</div>';
+}
+
+/* ==================================================================
+   MESSAGING  -  patient has exactly one thread; clinician has many
+   ================================================================== */
+const CHATS = {
+  p1:[ {f:'c',t:'How did the step up to 27.8 km feel this week?',at:'Mon 08:12'},
+       {f:'p',t:'Week 3 was rough honestly — the tendon was stiff most mornings and I felt it during two of the runs.',at:'Mon 19:40'},
+       {f:'c',t:'That is exactly what the drop in your score picked up, so the plan eased you back to 25 km. Nothing to worry about — this is the programme working.',at:'Tue 08:30'},
+       {f:'p',t:'Week 4 felt much better. Back to normal within an hour after each run.',at:'Sun 20:15'} ],
+
+  p2:[ {f:'c',t:'Dave — I have set your goal at 17 km across Tue, Thu and Sun. Start easy.',at:'3 Aug'},
+       {f:'p',t:'Knee is still grumbling the morning after. It has gone down twice now — am I going backwards?',at:'Mon 07:55',unread:true} ],
+
+  p3:[ {f:'c',t:'Welcome Priya. Week 1 is 7 km across Wednesday, Friday and Sunday. Keep every run easy and log it the same day.',at:'10 Aug'},
+       {f:'p',t:'All three done, felt completely fine.',at:'Sun 18:02'},
+       {f:'p',t:'Wednesday was really sore though — about 7/10 during and it is still sore this morning. Should I run Friday?',at:'Wed 07:41',unread:true} ],
+
+  p4:[ {f:'c',t:'You have held your full 18 km for three weeks with no symptoms. I think we talk about discharge.',at:'Mon 09:20'},
+       {f:'p',t:'That would be amazing. Does Thursday work for a review?',at:'Mon 12:05',unread:true} ],
+
+  p5:[ {f:'c',t:'Welcome Kelly. Your first week opens Monday — 12.6 km across Wednesday, Friday and Sunday. Any questions before you start, send them here.',at:'17 Aug',unread:true} ],
+
+  p6:[ {f:'p',t:'Missed Friday — away for work and nowhere sensible to run. Did it Sunday instead, hope that is alright.',at:'Sat 16:22'},
+       {f:'c',t:'Not a problem. Log what you actually did rather than what was planned and the maths takes care of itself.',at:'Sat 17:04'} ]
+};
+
+function unreadFor(pid, me){
+  return (CHATS[pid]||[]).filter(function(m){ return m.unread && m.f !== me; }).length;
+}
+function markRead(pid, me){
+  (CHATS[pid]||[]).forEach(function(m){ if(m.f !== me) m.unread = false; });
+}
+function totalUnread(me){
+  return Object.keys(CHATS).reduce(function(a,k){ return a + unreadFor(k, me); }, 0);
+}
+function lastMsg(pid){
+  const th = CHATS[pid] || [];
+  return th.length ? th[th.length-1] : null;
+}
+function bubbles(thread, me){
+  if(!thread.length) return '<div class="daysep">No messages yet</div>';
+  return thread.map(function(m){
+    return '<div class="bub '+(m.f===me?'me':'them')+'">'+m.t+'<div class="bt">'+m.at+'</div></div>';
+  }).join('');
+}
+function sendMsg(pid, from, text){
+  if(!text || !text.trim()) return false;
+  CHATS[pid] = CHATS[pid] || [];
+  CHATS[pid].push({ f:from, t:text.trim(), at:'Just now', unread:true });
+  return true;
+}
+function scrollThread(){
+  const tb = $('#threadBody');
+  if(tb) tb.scrollTop = tb.scrollHeight;
+}
+
+/* jump-to-messages helpers used by buttons across both apps */
+function goMessages(){ STATE.ptab = 'messages'; render(); }
+function openChat(pid){ STATE.clinTab = 'messages'; STATE.chatWith = pid; render(); }
+
+/* ---------------- patient: the single thread ---------------- */
+function wMessages(p, prog, wk){
+  markRead(p.id, 'p');
+  return '<div class="pcard" style="padding:0;overflow:hidden">'+
+      '<div class="thread-h"><div class="avatar" style="background:var(--ink)">MK</div>'+
+        '<div style="flex:1"><div style="font-weight:640;font-size:13.5px">Maciek Krolikowski, MScPT</div>'+
+        '<div class="sm">Physiotherapist #8857 · usually replies within a day</div></div></div>'+
+      '<div class="thread-b" id="threadBody">'+ bubbles(CHATS[p.id]||[], 'p') +'</div>'+
+      '<div class="composer"><input id="msgIn" placeholder="Message Maciek…" autocomplete="off">'+
+        '<button class="btn btn-p" id="msgSend">Send</button></div>'+
+    '</div>'+
+    '<div class="pcard"><h4>What to use this for</h4><div class="sm" style="line-height:1.8">'+
+      '&bull; Anything that felt wrong on a run.<br>'+
+      '&bull; A week you need to shift — travel, illness, an event.<br>'+
+      '&bull; Questions about the plan.<br><br>'+
+      'This is not monitored around the clock. If something is acutely wrong, seek care in person.</div></div>';
+}
+
+/* ---------------- clinician: many threads ---------------- */
+function renderMessages(){
+  const rows = PATIENTS.map(function(p){
+    return { p:p, un:unreadFor(p.id,'c'), last:lastMsg(p.id) };
+  }).sort(function(a,b){
+    if(b.un !== a.un) return b.un - a.un;
+    return 0;
+  });
+
+  if(!STATE.chatWith || !P(STATE.chatWith)) STATE.chatWith = rows[0].p.id;
+  const sel = P(STATE.chatWith);
+  markRead(sel.id, 'c');
+  const prog = computeProgram(sel, CFG);
+
+  $('#clinRoot').innerHTML =
+    '<div class="card"><div class="msgwrap">'+
+      '<div class="msglist">'+ rows.map(function(r){
+        const prev = r.last ? (r.last.f==='c' ? 'You: ' : '') + r.last.t : 'No messages yet';
+        return '<button class="msgitem '+(r.p.id===STATE.chatWith?'on':'')+'" data-chat="'+r.p.id+'">'+
+          '<div class="avatar" style="background:'+r.p.colour+'">'+initials(r.p.name)+'</div>'+
+          '<div style="flex:1;min-width:0"><div class="mn">'+r.p.name+
+            (r.un?'<span class="unread"></span>':'')+'</div>'+
+          '<div class="mp">'+prev+'</div></div>'+
+          '<div class="mt">'+(r.last?r.last.at:'')+'</div></button>';
+      }).join('') +'</div>'+
+
+      '<div class="thread">'+
+        '<div class="thread-h"><div class="avatar" style="background:'+sel.colour+'">'+initials(sel.name)+'</div>'+
+          '<div style="flex:1"><div style="font-weight:640;font-size:13.5px">'+sel.name+'</div>'+
+          '<div class="sm">'+sel.injury+' · week '+sel.cur+' of '+sel.weeks+' · '+r1(prog.current.vol)+' km this week</div></div>'+
+          '<button class="btn btn-sm" data-openpt="'+sel.id+'">Open programme</button></div>'+
+        '<div class="thread-b" id="threadBody">'+ bubbles(CHATS[sel.id]||[], 'c') +'</div>'+
+        '<div class="composer"><input id="msgIn" placeholder="Reply to '+sel.name.split(' ')[0]+'…" autocomplete="off">'+
+          '<button class="btn btn-p" id="msgSend">Send</button></div>'+
+      '</div>'+
+    '</div></div>';
+
+  $$('[data-chat]').forEach(function(el){ el.onclick=function(){ STATE.chatWith=el.dataset.chat; render(); }; });
+  $$('[data-openpt]').forEach(function(el){ el.onclick=function(){ STATE.clinTab='caseload'; STATE.clinPatient=el.dataset.openpt; render(); }; });
+  bindComposer(sel.id, 'c');
+  scrollThread();
+}
+
+function bindComposer(pid, from){
+  const inp = $('#msgIn'), btn = $('#msgSend');
+  if(!inp || !btn) return;
+  const go = function(){
+    if(sendMsg(pid, from, inp.value)){
+      render();
+      toast(from==='p' ? 'Message sent to your physiotherapist' : 'Reply sent');
+    }
+  };
+  btn.onclick = go;
+  inp.onkeydown = function(e){ if(e.key==='Enter') go(); };
+  inp.focus();
+}
+
+/* ==================================================================
+   ROUTER
+   ================================================================== */
+const MARK = '<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">'+
+  '<path d="M4.6 18.4L16.2 6.8"/><path d="M9.2 6.4h8.4V14.8"/><circle cx="11.9" cy="16.9" r="1.5" fill="#fff" stroke="none"/></svg>';
+
+const NAVS = {
+  patient:   function(p){ return PTABS.map(function(t){
+                 const un = t[0]==='messages' ? unreadFor(p.id,'p') : 0;
+                 return {k:t[0], lbl:t[1], badge:un, on:STATE.ptab===t[0],
+                         go:function(){ STATE.ptab=t[0]; }}; }); },
+  clinician: function(){ return [
+                 {k:'caseload', lbl:'Caseload', on:STATE.clinTab==='caseload',
+                  go:function(){ STATE.clinTab='caseload'; STATE.clinPatient=null; }},
+                 {k:'messages', lbl:'Messages', badge:totalUnread('c'), on:STATE.clinTab==='messages',
+                  go:function(){ STATE.clinTab='messages'; STATE.clinPatient=null; }}]; },
+  admin:     function(){ return [['protocols','Protocols'],['algorithm','Algorithm'],
+                                 ['accounts','Accounts'],['clinic','Clinic & compliance']].map(function(t){
+                 return {k:t[0], lbl:t[1], on:STATE.adminTab===t[0],
+                         go:function(){ STATE.adminTab=t[0]; }}; }); }
+};
+
+function render(){
+  $$('.view').forEach(function(v){ v.classList.toggle('on', v.id === 'v-'+STATE.view); });
+  $$('#roleSeg button').forEach(function(b){ b.classList.toggle('on', b.dataset.view===STATE.view); });
+
+  /* the demo-only patient picker */
+  if(STATE.view==='patient'){
+    $('#switchExtra').innerHTML = '<span class="swl" style="margin-right:9px">Programme</span>'+
+      '<select id="demoPatient">'+ PATIENTS.map(function(p){
+        return '<option value="'+p.id+'"'+(p.id===STATE.patient?' selected':'')+'>'+p.name+' — '+p.injury+' — week '+p.cur+' of '+p.weeks+'</option>';
+      }).join('') +'</select>';
+    $('#demoPatient').onchange = function(e){ STATE.patient=e.target.value; STATE.ptab='today'; render(); };
+  } else {
+    $('#switchExtra').innerHTML = '<span class="swl">Maciek Krolikowski &middot; PT #8857</span>';
+  }
+
+  /* one app header for every role */
+  const p = P(STATE.patient);
+  const right = STATE.view==='patient'
+    ? '<span class="pill pill-n">Week '+p.cur+' of '+p.weeks+'</span>'+
+      '<div style="display:flex;align-items:center;gap:9px"><div class="avatar" style="background:'+p.colour+'">'+initials(p.name)+'</div>'+
+      '<span style="font-weight:640;font-size:13px">'+p.name+'</span></div>'
+    : '<span style="font-size:12px;color:var(--muted)">18 Aug 2026</span>'+
+      '<div style="display:flex;align-items:center;gap:9px"><div class="avatar" style="background:var(--ink)">MK</div>'+
+      '<span style="font-weight:640;font-size:13px">Maciek Krolikowski</span></div>';
+
+  $('#appHead').innerHTML =
+    '<div class="applogo"><div class="mk">'+MARK+'</div>'+
+      '<div><div class="nm">THE LAB</div><div class="sb">Rehab + Performance</div></div></div>'+
+    '<span style="width:1px;height:26px;background:var(--line)"></span>'+
+    '<span style="font-size:13.5px;font-weight:620;color:var(--ink-2)">Return to Run</span>'+
+    '<span class="spacer"></span>'+ right;
+
+  const items = NAVS[STATE.view](p);
+  $('#appNav').innerHTML = items.map(function(it,i){
+    return '<button data-nav="'+i+'" class="'+(it.on?'on':'')+'">'+it.lbl+
+      (it.badge ? '<span class="badge">'+it.badge+'</span>' : '')+'</button>';
+  }).join('');
+  $$('[data-nav]').forEach(function(b){ b.onclick=function(){ items[+b.dataset.nav].go(); render(); }; });
+
+  if(STATE.view==='patient')   renderPatient();
+  if(STATE.view==='clinician') renderClinician();
+  if(STATE.view==='admin')     renderAdmin();
+}
+
+$$('#roleSeg button').forEach(function(b){ b.onclick=function(){ STATE.view=b.dataset.view; render(); }; });
+render();
+</script>
+</body>
+</html>
