@@ -195,6 +195,14 @@ tbody tr.click:hover{background:var(--surface-2)}
 .lbl-short{display:none}
 .painval{font-size:34px;font-weight:700;letter-spacing:-.03em;line-height:1}
 .scaleends{display:flex;justify-content:space-between;font-size:10.5px;color:var(--muted);margin-top:7px;font-weight:600}
+.doneitem{border:1px solid var(--line);border-radius:12px;padding:12px 13px;margin-bottom:10px}
+.doneitem .dn2{font-weight:650;font-size:13.5px}
+.doneitem .dd2{font-size:12px;color:var(--muted);line-height:1.45;margin:2px 0 10px}
+.done3{display:flex;gap:7px}
+.done3 button{flex:1;padding:10px 5px;border:1.5px solid var(--line);border-radius:9px;font-size:12.5px;font-weight:640;background:var(--surface);color:var(--ink-2);min-height:44px}
+.done3 button.on-f{background:var(--green-soft);border-color:#7fc79a;color:var(--green)}
+.done3 button.on-p{background:var(--amber-soft);border-color:#eccb92;color:var(--amber)}
+.done3 button.on-s{background:var(--red-soft);border-color:#eda6a6;color:var(--red)}
 .yn{display:flex;gap:10px}
 .yn button{flex:1;padding:14px;border-radius:12px;border:1.5px solid var(--line);font-weight:650;background:var(--surface);color:var(--ink-2)}
 .yn button.on-y{background:var(--green-soft);border-color:#7fc79a;color:var(--green)}
@@ -230,6 +238,17 @@ tbody tr.click:hover{background:var(--surface-2)}
 .setrow:last-child{border-bottom:0}
 .setrow .st{font-weight:600;font-size:13px}
 .setrow .sd{font-size:11.5px;color:var(--muted);line-height:1.45;margin-top:2px}
+.sect{border:1px solid var(--line);border-radius:var(--r);background:var(--surface);margin-bottom:16px;box-shadow:var(--sh)}
+.sect-h{padding:14px 18px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px}
+.sect-n{width:24px;height:24px;border-radius:7px;background:var(--ink);color:#fff;display:grid;place-items:center;font-size:12px;font-weight:700;flex:0 0 24px}
+.sect-h h3{font-size:14.5px}
+.sect-h .sh{font-size:11.5px;color:var(--muted)}
+.sect-b{padding:18px}
+.streamcard{border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px;background:var(--surface-2)}
+.daypick{display:flex;gap:5px;flex-wrap:wrap}
+.daypick button{padding:7px 0;width:44px;border:1.5px solid var(--line);border-radius:8px;font-size:11.5px;font-weight:650;background:var(--surface);color:var(--muted)}
+.daypick button.on{background:var(--ink);border-color:var(--ink);color:#fff}
+.rungs{width:100%;min-height:118px;padding:10px 11px;border:1px solid var(--line);border-radius:9px;font-family:inherit;font-size:13px;line-height:1.6;resize:vertical}
 .mx{border-collapse:separate;border-spacing:2px;width:auto;margin:0}
 .mx td{width:19px;height:19px;padding:0;border:0;border-radius:3px}
 .mx th{padding:0 6px 0 0;border:0;font-size:9.5px;color:var(--muted);font-weight:700;text-align:right;letter-spacing:0}
@@ -361,15 +380,57 @@ const CFG = {
 };
 
 /* ---------- reference protocols the administrator maintains ---------- */
+/* A protocol answers three questions:
+     1. what the patient does           -> streams
+     2. what we ask them afterwards     -> the shared three questions, plus completion
+     3. how their answers change it     -> algo (owned here, not clinic-wide)
+   Clinic-wide safety rules live in CFG and cannot be overridden by a protocol. */
 const PROTOCOLS = [
-  {id:'tendo',  name:'Tendinopathy — conservative', red:0.35, inc:0.10, weeks:12,
-   note:'Load-tolerant tissue. Slower ramp; pain up to 4/10 during running is acceptable.', uses:14},
-  {id:'bone',   name:'Bone stress injury — cautious', red:0.50, inc:0.10, weeks:16,
-   note:'Any pain during running is a stop rule. Walk/run intervals for weeks 1–3.', uses:6},
-  {id:'std',    name:'General return to run (default)', red:0.30, inc:0.15, weeks:8,
-   note:'Balanced default for a runner with no red flags and a clear goal distance.', uses:31},
-  {id:'acl',    name:'Post-ACLR criterion-based', red:0.35, inc:0.15, weeks:10,
-   note:'Requires hop-test clearance before week 1. Volume ramp only after criteria are met.', uses:9}
+  {id:'tendo', name:'Mid-portion Achilles tendinopathy', region:'Achilles / calf',
+   red:0.35, inc:0.10, weeks:12, uses:14,
+   note:'Load-tolerant tissue. The next morning matters more than pain during the run.',
+   algo:{ wDuring:0.30, wAfter:0.50, wBaseline:0.20, painStep:0.025,
+          greenAt:0.91, yellowAt:0.90, deload:0.10, dwell:2, ladderLoad:4, flagPainDuring:7, flagPainAfter:5 },
+   streams:[
+     {key:'run',  type:'volume', name:'Running', unit:'km'},
+     {key:'calf', type:'ladder', name:'Calf loading', days:[0,3,5], rungs:[
+        'Double-leg calf raise, bodyweight, 3\u00d715',
+        'Double-leg calf raise, 3s lower, 3\u00d712',
+        'Single-leg calf raise, bodyweight, 3\u00d712',
+        'Single-leg calf raise + 10 kg, 3\u00d710',
+        'Single-leg hop, 3\u00d710']}
+   ]},
+
+  {id:'bone', name:'Bone stress injury \u2014 cautious', region:'Tibia / metatarsal',
+   red:0.50, inc:0.10, weeks:16, uses:6,
+   note:'Any pain during running is a stop rule. Scored strictly and deloaded hard.',
+   algo:{ wDuring:0.55, wAfter:0.25, wBaseline:0.20, painStep:0.04,
+          greenAt:0.93, yellowAt:0.91, deload:0.15, dwell:3, flagPainDuring:4, flagPainAfter:3 },
+   streams:[ {key:'run', type:'volume', name:'Running', unit:'km'} ]},
+
+  {id:'std', name:'General return to run', region:'Any lower limb',
+   red:0.30, inc:0.15, weeks:8, uses:31,
+   note:'Balanced default for a runner with no red flags and a clear goal distance.',
+   algo:{ wDuring:0.40, wAfter:0.40, wBaseline:0.20, painStep:0.025,
+          greenAt:0.91, yellowAt:0.90, deload:0.10, dwell:2, flagPainDuring:7, flagPainAfter:5 },
+   streams:[ {key:'run', type:'volume', name:'Running', unit:'km'} ]},
+
+  {id:'acl', name:'Post-ACLR return to sport', region:'Knee',
+   red:0.35, inc:0.15, weeks:10, uses:9,
+   note:'Hop-test clearance before week 1. Court exposure climbs only on clean weeks.',
+   algo:{ wDuring:0.35, wAfter:0.35, wBaseline:0.30, painStep:0.03,
+          greenAt:0.92, yellowAt:0.90, deload:0.10, dwell:2, ladderLoad:5, flagPainDuring:6, flagPainAfter:4 },
+   streams:[
+     {key:'run',   type:'volume', name:'Running', unit:'km'},
+     {key:'court', type:'ladder', name:'Return to court', days:[1,4], rungs:[
+        'Individual drills, no ball',
+        'Individual drills with ball',
+        'Non-contact team drills',
+        'Full training, non-contact',
+        'Full contact training',
+        'Partial game minutes',
+        'Full game']}
+   ]}
 ];
 
 /* ---------- the caseload ---------- */
@@ -420,6 +481,10 @@ const PATIENTS = [
            '4-1':{pd:3,pa:3,b:'yes'} } }
 ];
 
+/* where each patient currently sits on each ladder */
+const START_LEVELS = { p1:{calf:1}, p2:{}, p3:{}, p4:{court:3}, p5:{calf:0}, p6:{calf:2} };
+PATIENTS.forEach(function(p){ p.levels = START_LEVELS[p.id] || {}; });
+
 /* ==================================================================
    THE ENGINE  -  one function, and every screen reads from it
    ================================================================== */
@@ -436,7 +501,23 @@ function mondayOfWeek(d){
   x.setDate(x.getDate()-off); x.setHours(0,0,0,0); return x;
 }
 
+function protocolOf(p){ return PROTOCOLS.filter(function(x){ return x.id===p.protocol; })[0]; }
+
+/* the protocol's algorithm layered over the clinic defaults */
+function algoFor(p, cfg){
+  const pr = protocolOf(p);
+  return Object.assign({}, cfg, (pr && pr.algo) ? pr.algo : {});
+}
+function streamsOf(p){
+  const pr = protocolOf(p);
+  return (pr && pr.streams) ? pr.streams : [{key:'run', type:'volume', name:'Running', unit:'km'}];
+}
+function laddersOf(p){ return streamsOf(p).filter(function(x){ return x.type==='ladder'; }); }
+
 function computeProgram(p, cfg){
+  const proto     = protocolOf(p);
+  const A         = algoFor(p, cfg);          // scoring + thresholds: the protocol's
+  const ladders   = laddersOf(p);
   const goalTotal = sum(p.goal);
   const rel       = p.goal.map(g => goalTotal ? g/goalTotal : 0);
   const runDays   = p.goal.map((g,i)=> g>0 ? i : -1).filter(i=>i>=0);
@@ -444,6 +525,8 @@ function computeProgram(p, cfg){
   const midnight  = new Date(TODAY); midnight.setHours(0,0,0,0);
   const out       = [];
   let vol         = goalTotal * (1 - p.red);
+  const levels    = {}; ladders.forEach(function(L){ levels[L.key] = (p.levels && p.levels[L.key]) || 0; });
+  let greenRun    = 0;
 
   for(let w=1; w<=p.weeks; w++){
     if(p.overrides && p.overrides[w]) vol = p.overrides[w].vol;   // clinician override wins
@@ -452,26 +535,30 @@ function computeProgram(p, cfg){
     const days  = rel.map((rl,i)=>{
       const km = vol*rl, key = w+'-'+i, log = p.logs[key] || null;
       const dt = new Date(start); dt.setDate(dt.getDate()+i); dt.setHours(0,0,0,0);
-      return { i, key, km, log, date:dt, isRun:km>0,
-               score: km>0 ? runScore(log,cfg) : null,
+      /* a session's load is its kilometres plus a fixed allowance for any ladder work,
+         so strength days carry weight in the score instead of being invisible */
+      const hasLadder = ladders.some(function(L){ return (L.days||[]).indexOf(i) >= 0; });
+      const load = km + (hasLadder ? (A.ladderLoad || 3) : 0);
+      return { i, key, km, load, hasLadder, log, date:dt, isRun:km>0, isSession: load>0,
+               score: load>0 ? runScore(log,A) : null,
                isPast: dt < midnight, isToday: dt.getTime() === midnight.getTime() };
     });
 
-    const prescribed = days.filter(d=>d.isRun);
+    const prescribed = days.filter(d=>d.isSession);
     const logged     = prescribed.filter(d=>d.log);
     const missed     = prescribed.filter(d=>!d.log && d.isPast);
     const future     = w > p.cur;
 
     /* volume-weighted mean response score - SUMPRODUCT(km,score)/SUM(km) */
     const pool  = cfg.blankIsNotNo ? logged : prescribed;
-    const wsum  = sum(pool.map(d=>d.km));
-    const score = wsum ? sum(pool.map(d => d.km * (d.score === null ? 0 : d.score))) / wsum : null;
+    const wsum  = sum(pool.map(d=>d.load));
+    const score = wsum ? sum(pool.map(d => d.load * (d.score === null ? 0 : d.score))) / wsum : null;
 
     /* red flags */
     const flags = [];
     logged.forEach(d=>{
-      if(d.log.pd >= cfg.flagPainDuring) flags.push({sev:'high', txt:DAYSL[d.i]+': pain '+d.log.pd+'/10 during the run'});
-      if(d.log.pa >= cfg.flagPainAfter)  flags.push({sev:'high', txt:DAYSL[d.i]+': next-morning pain '+d.log.pa+'/10'});
+      if(d.log.pd >= A.flagPainDuring) flags.push({sev:'high', txt:DAYSL[d.i]+': pain '+d.log.pd+'/10 during the run'});
+      if(d.log.pa >= A.flagPainAfter)  flags.push({sev:'high', txt:DAYSL[d.i]+': next-morning pain '+d.log.pa+'/10'});
     });
     let streak = 0;
     prescribed.forEach(d=>{
@@ -480,21 +567,28 @@ function computeProgram(p, cfg){
         if(streak >= cfg.flagNoBaselineStreak){ flags.push({sev:'med', txt:streak+' runs in a row where symptoms did not settle'}); streak = 0; }
       } else if(d.log) streak = 0;
     });
-    if(missed.length) flags.push({sev:'low', txt:missed.length+' prescribed run'+(missed.length>1?'s':'')+' not logged'});
+    if(missed.length) flags.push({sev:'low', txt:missed.length+' session'+(missed.length>1?'s':'')+' not logged'});
+    let partials = 0, skips = 0;
+    logged.forEach(function(d){
+      const dn = d.log.done || {};
+      Object.keys(dn).forEach(function(k){ if(dn[k]==='partial') partials++; if(dn[k]==='skipped') skips++; });
+    });
+    if(skips)    flags.push({sev:'med', txt:skips+' prescribed item'+(skips>1?'s':'')+' skipped'});
+    if(partials) flags.push({sev:'low', txt:partials+' item'+(partials>1?'s':'')+' only partly completed'});
 
     /* decision */
     let status = 'pending', mult = 1, why = '';
     const graded = (!future) && (w < p.cur) && (logged.length >= Math.min(cfg.minRunsToScore, prescribed.length));
     if(future){ status='future'; why='Projected — assumes the week is held.'; }
-    else if(w === p.cur){ status='active'; why = logged.length+' of '+prescribed.length+' runs logged so far.'; }
-    else if(!graded || score === null){ status='nodata'; why='Too few runs logged — volume carried forward unchanged.'; }
-    else if(score >= cfg.greenAt){ status='green';  mult = 1+p.inc;      why='Score '+score.toFixed(3)+' ≥ '+cfg.greenAt+' — increase '+pct(p.inc)+'%.'; }
-    else if(score >= cfg.yellowAt){ status='yellow'; mult = 1;            why='Score '+score.toFixed(3)+' ≥ '+cfg.yellowAt+' — hold volume.'; }
-    else { status='red'; mult = 1-cfg.deload; why='Score '+score.toFixed(3)+' < '+cfg.yellowAt+' — reduce '+pct(cfg.deload)+'%.'; }
+    else if(w === p.cur){ status='active'; why = logged.length+' of '+prescribed.length+' sessions logged so far.'; }
+    else if(!graded || score === null){ status='nodata'; why='Too few sessions logged — volume carried forward unchanged.'; }
+    else if(score >= A.greenAt){ status='green';  mult = 1+p.inc;    why='Score '+score.toFixed(3)+' ≥ '+A.greenAt+' — increase '+pct(p.inc)+'%.'; }
+    else if(score >= A.yellowAt){ status='yellow'; mult = 1;          why='Score '+score.toFixed(3)+' ≥ '+A.yellowAt+' — hold volume.'; }
+    else { status='red'; mult = 1-A.deload; why='Score '+score.toFixed(3)+' < '+A.yellowAt+' — reduce '+pct(A.deload)+'%.'; }
 
     let overridden = null;
     if(cfg.safetyStop && flags.some(f=>f.sev==='high') && (status==='green'||status==='yellow'||status==='active')){
-      overridden = status; status = 'flag'; mult = 1-cfg.deload;
+      overridden = status; status = 'flag'; mult = 1-A.deload;
       why = 'Safety stop — a red-flag run overrides the score.';
     }
 
@@ -502,13 +596,28 @@ function computeProgram(p, cfg){
     if(cfg.maxWeeklyStepKm && next-vol > cfg.maxWeeklyStepKm){ next = vol+cfg.maxWeeklyStepKm; why += ' Step capped at '+cfg.maxWeeklyStepKm+' km.'; }
     if(cfg.capAtGoal) next = Math.min(next, goalTotal);
 
+    /* ladders move on the same decision, in rungs instead of percent */
+    const weekLevels = Object.assign({}, levels);
+    let ladderMove = 'hold';
+    if(status === 'green'){
+      greenRun++;
+      if(greenRun >= (A.dwell || 2)){
+        ladderMove = 'advance'; greenRun = 0;
+        ladders.forEach(function(L){ levels[L.key] = Math.min(L.rungs.length-1, levels[L.key]+1); });
+      }
+    } else if(status === 'red' || status === 'flag'){
+      greenRun = 0; ladderMove = 'regress';
+      ladders.forEach(function(L){ levels[L.key] = Math.max(0, levels[L.key]-1); });
+    } else if(status === 'yellow' || status === 'nodata'){ greenRun = 0; }
+
     out.push({ w, vol, days, prescribed, logged, missed, score, status, mult, why, flags, start,
                overridden, atGoal: Math.abs(vol-goalTotal) < 0.05,
-               pctGoal: goalTotal ? vol/goalTotal : 0, nextVol: next });
+               pctGoal: goalTotal ? vol/goalTotal : 0, nextVol: next,
+               levels: weekLevels, ladderMove: ladderMove, greenRun: greenRun });
     vol = next;
   }
   return { goalTotal, rel, runDays, weeks:out, current: out[p.cur-1],
-           protocol: PROTOCOLS.filter(x=>x.id===p.protocol)[0] };
+           protocol: proto, algo: A, streams: streamsOf(p), ladders: ladders };
 }
 
 const STATUS = {
@@ -531,11 +640,32 @@ function fmtDate(d){ return d.toLocaleDateString('en-CA',{month:'short',day:'num
 function closeModal(){ $('#scrim').classList.remove('on'); }
 function P(id){ return PATIENTS.filter(function(x){return x.id===id;})[0]; }
 
-let STATE = { signedIn:false, gateStep:'roles', view:'patient', patient:'p1', ptab:'today', siteWidth:'wide', clinTab:'caseload', chatWith:null, chatPane:'list', clinPatient:null, adminTab:'protocols', draft:null };
+let STATE = { signedIn:false, gateStep:'roles', view:'patient', patient:'p1', ptab:'today', siteWidth:'wide', clinTab:'caseload', chatWith:null, chatPane:'list', protoEdit:null, clinPatient:null, adminTab:'protocols', draft:null };
 
 /* ==================================================================
    PATIENT WEB APP  -  a link the clinic sends; opens in any browser
    ================================================================== */
+/* every item due on one day: the run, plus any ladder work scheduled that day */
+function itemsOn(p, prog, wk, dayIdx){
+  const items = [];
+  const d = wk.days[dayIdx];
+  if(d && d.isRun) items.push({ key:'run', type:'volume', name:'Running',
+                                detail:r1(d.km)+' km easy', km:d.km });
+  prog.ladders.forEach(function(L){
+    if((L.days||[]).indexOf(dayIdx) >= 0){
+      const lvl = wk.levels[L.key] || 0;
+      items.push({ key:L.key, type:'ladder', name:L.name,
+                   detail:L.rungs[lvl], level:lvl, of:L.rungs.length });
+    }
+  });
+  return items;
+}
+function sessionDays(p, prog, wk){
+  const out = [];
+  for(let i=0;i<7;i++){ if(itemsOn(p, prog, wk, i).length) out.push(i); }
+  return out;
+}
+
 function nextRunOf(prog){
   const wk = prog.current;
   if(!wk) return null;
@@ -545,6 +675,7 @@ function nextRunOf(prog){
   if(due) return due;
   return wk.prescribed.filter(function(d){ return !d.log; })[0] || null;
 }
+function itemLabel(it){ return it.type==='ladder' ? it.name+' \u00b7 step '+(it.level+1)+' of '+it.of : it.name; }
 
 const PTABS = [['today','Today','Today'],['week','My progress','Progress'],['plan','My plan','Plan'],
                ['messages','Messages','Messages'],['me','Account','Account']];
@@ -556,76 +687,102 @@ function renderPatient(){
   if(STATE.ptab==='messages'){ bindComposer(p.id,'p'); scrollThread(); }
 }
 
-function dayStrip(wk){
+function dayStrip(p, prog, wk){
   return '<div class="dayrow">'+ wk.days.map(function(d){
-    const cls = !d.isRun ? 'rest' : (d.log ? 'done' : (d.isToday ? 'today' : ''));
-    const val = !d.isRun ? 'Rest' : (d.log ? '✓ done' : r1(d.km)+' km');
-    return '<div class="daycell '+cls+'"><div class="dn">'+DAYS[d.i]+'</div><div class="dd">'+fmtDate(d.date)+'</div><div class="dv">'+val+'</div></div>';
+    const items = itemsOn(p, prog, wk, d.i);
+    const cls = !items.length ? 'rest' : (d.log ? 'done' : (d.isToday ? 'today' : ''));
+    let val;
+    if(!items.length) val = 'Rest';
+    else if(d.log)    val = '\u2713 done';
+    else if(d.isRun)  val = r1(d.km)+' km';
+    else              val = items[0].name.split(' ')[0];
+    const extra = (items.length > 1 && !d.log) ? '<div style="font-size:9px;color:var(--muted);margin-top:2px">+'+(items.length-1)+' more</div>' : '';
+    return '<div class="daycell '+cls+'"><div class="dn">'+DAYS[d.i]+'</div><div class="dd">'+fmtDate(d.date)+'</div><div class="dv">'+val+'</div>'+extra+'</div>';
   }).join('') +'</div>';
 }
 
 /* ---------------- Today ---------------- */
 function wToday(p, prog, wk){
   const nx = nextRunOf(prog);
+  const items = nx ? itemsOn(p, prog, wk, nx.i) : [];
+  const run = items.filter(function(i){ return i.type==='volume'; })[0];
   let hero;
   if(!nx){
     hero = '<div class="hero"><div><div class="eyebrow">Week '+p.cur+' complete</div>'+
       '<div class="big">All done</div>'+
-      '<div class="sub">Every run logged. Your plan for next week appears here on Sunday evening.</div></div></div>';
+      '<div class="sub">Every session logged. Your plan for next week appears here on Sunday evening.</div></div></div>';
   } else {
-    const when = nx.isToday ? 'Today · '+DAYSL[nx.i]+' '+fmtDate(nx.date)
-               : (nx.isPast ? 'Still to log · '+DAYSL[nx.i]+' '+fmtDate(nx.date)
-                            : 'Your next run · '+DAYSL[nx.i]+' '+fmtDate(nx.date));
+    const when = nx.isToday ? 'Today \u00b7 '+DAYSL[nx.i]+' '+fmtDate(nx.date)
+               : (nx.isPast ? 'Still to log \u00b7 '+DAYSL[nx.i]+' '+fmtDate(nx.date)
+                            : 'Your next session \u00b7 '+DAYSL[nx.i]+' '+fmtDate(nx.date));
+    const lead   = run || items[0];
+    const others = items.filter(function(i){ return i !== lead; });
     hero = '<div class="hero"><div><div class="eyebrow">'+when+'</div>'+
-      '<div class="big">'+r1(nx.km)+'<span> km</span></div>'+
-      '<div class="sub">Easy, conversational pace — you should be able to talk in full sentences. Stop the run if pain climbs above 5 out of 10.</div></div>'+
+      '<div class="big">'+(run ? r1(run.km)+'<span> km</span>' : lead.name)+'</div>'+
+      '<div class="sub">'+
+        (run ? 'Easy, conversational pace. Stop the run if pain climbs above 5 out of 10.' : lead.detail)+
+        (others.length ? '<br><b>Also today:</b> '+others.map(function(o){ return o.name+' \u2014 '+o.detail; }).join('; ') : '')+
+      '</div></div>'+
       '<div><button class="btn" id="btnLog">'+
       '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>'+
-      (nx.log ? 'Edit this run' : 'Log this run')+'</button></div></div>';
+      (nx.log ? 'Edit this session' : 'Log this session')+'</button></div></div>';
   }
 
   const highFlags = wk.flags.filter(function(f){ return f.sev==='high'; });
   const prev = prog.weeks[p.cur-2];
   const msg  = prev ? { green:'Last week went well, so this week steps up a little.',
                         yellow:'We are holding your volume steady this week to let things settle.',
-                        red:'We have eased your volume back slightly. That is a normal, planned part of the programme — not a setback.',
-                        flag:'We have eased your volume back because one run was more painful than we want to see.' }[prev.status] : null;
+                        red:'We have eased your volume back slightly. That is a normal, planned part of the programme \u2014 not a setback.',
+                        flag:'We have eased your volume back because one session was more painful than we want to see.' }[prev.status] : null;
 
   return hero +
     '<div class="pcard"><h4>Your week at a glance</h4><div class="sm" style="margin-bottom:12px">'+
-      fmtDate(wk.start)+' – '+fmtDate(wk.days[6].date)+' · '+r1(wk.vol)+' km total across '+wk.prescribed.length+' runs</div>'+
-      dayStrip(wk)+'</div>'+
+      fmtDate(wk.start)+' \u2013 '+fmtDate(wk.days[6].date)+' \u00b7 '+wk.prescribed.length+' sessions'+
+      (prog.ladders.length ? ' across '+prog.streams.length+' streams' : '')+'</div>'+
+      dayStrip(p, prog, wk)+'</div>'+
 
     '<div class="wgrid">'+
-      '<div><div class="pcard"><h4>This week&rsquo;s runs</h4><div class="sm" style="margin-bottom:6px">Log each run the same day if you can — the next morning answer can wait until the morning.</div>'+
+      '<div><div class="pcard"><h4>This week&rsquo;s sessions</h4>'+
+        '<div class="sm" style="margin-bottom:6px">Log each session the same day if you can. The next-morning answer can wait until the morning.</div>'+
         wk.prescribed.map(function(d){
+          const its = itemsOn(p, prog, wk, d.i);
           const st = d.log ? '<span class="pill pill-g">Logged</span>'
                            : (d.isPast ? '<span class="pill pill-a">Not logged yet</span>' : '<span class="pill pill-n">Upcoming</span>');
-          const det = d.log ? 'Pain '+d.log.pd+'/10 during · '+d.log.pa+'/10 next morning · symptoms '+(d.log.b==='yes'?'settled':'still present')
-                            : 'Easy pace';
+          const det = d.log
+            ? 'Pain '+d.log.pd+'/10 during \u00b7 '+d.log.pa+'/10 next morning \u00b7 symptoms '+(d.log.b==='yes'?'settled':'still present')
+            : its.map(function(i){ return itemLabel(i); }).join(' + ');
           return '<div class="runrow"><div class="dot '+(d.log?'dot-g':'dot-n')+'"></div>'+
-            '<div style="flex:1;min-width:0"><div style="font-weight:640;font-size:13.5px">'+DAYSL[d.i]+' '+fmtDate(d.date)+' · '+r1(d.km)+' km</div>'+
+            '<div style="flex:1;min-width:0"><div style="font-weight:640;font-size:13.5px">'+DAYSL[d.i]+' '+fmtDate(d.date)+'</div>'+
             '<div class="sm">'+det+'</div></div>'+st+'</div>';
         }).join('') +'</div></div>'+
 
       '<div>'+
         (highFlags.length ? '<div class="pcard" style="border-color:#f0bcbc;background:var(--red-soft)">'+
           '<h4 style="color:var(--red)">We have paused your progression</h4>'+
-          '<div class="sm" style="color:#8f2020">That last run was more painful than we want to see. Your volume will not increase this week, and your physiotherapist has been notified automatically.</div>'+
+          '<div class="sm" style="color:#8f2020">That last session was more painful than we want to see. Your volume will not increase this week, and your physiotherapist has been notified automatically.</div>'+
           '<div class="sm" style="color:#8f2020;margin-top:8px">'+highFlags.map(function(f){return f.txt;}).join('<br>')+'</div>'+
-          '<button class="btn btn-sm" style="margin-top:11px" onclick="toast(\'Message drafted to your physiotherapist\')">Message Maciek</button></div>' : '')+
+          '<button class="btn btn-sm" style="margin-top:11px" onclick="goMessages()">Message Maciek</button></div>' : '')+
 
         (msg ? '<div class="pcard"><h4>Why this week looks like this</h4><div class="sm">'+msg+'</div></div>' : '')+
 
+        (prog.ladders.length ? '<div class="pcard"><h4>Where you are up to</h4>'+
+          prog.ladders.map(function(L){
+            const lvl = wk.levels[L.key] || 0;
+            return '<div style="margin-bottom:12px"><div style="font-weight:640;font-size:13px">'+L.name+'</div>'+
+              '<div class="sm" style="margin-bottom:7px">Step '+(lvl+1)+' of '+L.rungs.length+' \u00b7 '+L.rungs[lvl]+'</div>'+
+              '<div style="display:flex;gap:3px">'+L.rungs.map(function(r,i){
+                return '<div style="flex:1;height:6px;border-radius:99px;background:'+(i<=lvl?'var(--accent)':'var(--line)')+'"></div>';
+              }).join('')+'</div></div>';
+          }).join('')+'</div>' : '')+
+
         '<div class="pcard"><h4>The rules we agreed</h4><div class="sm" style="line-height:1.8">'+
-          '&bull; Easy conversational pace throughout.<br>'+
-          '&bull; Stop the run if pain goes above 5/10.<br>'+
-          '&bull; Answer honestly — the plan adapts to what you tell it.<br>'+
+          '&bull; Easy conversational pace on runs.<br>'+
+          '&bull; Stop if pain goes above 5/10.<br>'+
+          '&bull; Answer honestly \u2014 the plan adapts to what you tell it.<br>'+
           '&bull; A sore week is information, not failure.</div></div>'+
 
-        '<div class="pcard"><h4>Something not right?</h4><div class="sm">Sharp pain, a limp, or swelling that lasts more than 24 hours — stop running and contact the clinic.</div>'+
-        '<div style="display:flex;gap:8px;margin-top:11px;flex-wrap:wrap"><button class="btn btn-sm" onclick="toast(\'Message drafted\')">Message the clinic</button>'+
-        '<a class="btn btn-sm" href="tel:5874140193">Call (587) 414-0193</a></div></div>'+
+        '<div class="pcard"><h4>Something not right?</h4><div class="sm">Sharp pain, a limp, or swelling that lasts more than 24 hours \u2014 stop and send Maciek a message. He sees it alongside everything you have logged.</div>'+
+        '<button class="btn btn-sm" style="margin-top:11px" onclick="goMessages()">Message Maciek</button></div>'+
       '</div></div>';
 }
 
@@ -686,14 +843,20 @@ function wProgress(p, prog, wk){
 /* ---------------- Plan ---------------- */
 function wPlan(p, prog, wk){
   return '<div class="wgrid">'+
-    '<div class="pcard"><h4>Week '+p.cur+' · '+r1(wk.vol)+' km</h4>'+
-      '<div class="sm" style="margin-bottom:12px">'+fmtDate(wk.start)+' – '+fmtDate(wk.days[6].date)+'</div>'+
+    '<div class="pcard"><h4>Week '+p.cur+'</h4>'+
+      '<div class="sm" style="margin-bottom:12px">'+fmtDate(wk.start)+' – '+fmtDate(wk.days[6].date)+' · '+
+      prog.streams.map(function(st){ return st.name; }).join(' + ')+'</div>'+
       wk.days.map(function(d){
-        if(!d.isRun) return '<div class="runrow"><div class="dot dot-n"></div><div style="flex:1"><div style="font-weight:600;font-size:13.5px;color:var(--muted)">'+DAYSL[d.i]+' '+fmtDate(d.date)+'</div>'+
+        const its = itemsOn(p, prog, wk, d.i);
+        if(!its.length) return '<div class="runrow"><div class="dot dot-n"></div><div style="flex:1"><div style="font-weight:600;font-size:13.5px;color:var(--muted)">'+DAYSL[d.i]+' '+fmtDate(d.date)+'</div>'+
           '<div class="sm">Rest, or cross-train with something that does not aggravate it</div></div></div>';
         return '<div class="runrow"><div class="dot '+(d.log?'dot-g':'dot-n')+'"></div>'+
-          '<div style="flex:1"><div style="font-weight:640;font-size:13.5px">'+DAYSL[d.i]+' '+fmtDate(d.date)+'</div>'+
-          '<div class="sm">Easy run'+(d.log?' — logged':'')+'</div></div><b style="font-size:15px">'+r1(d.km)+' km</b></div>';
+          '<div style="flex:1"><div style="font-weight:640;font-size:13.5px">'+DAYSL[d.i]+' '+fmtDate(d.date)+(d.log?' · logged':'')+'</div>'+
+          its.map(function(it){
+            return '<div class="sm">'+(it.type==='volume'
+              ? '<b>'+r1(it.km)+' km</b> easy run'
+              : '<b>'+it.name+'</b> — '+it.detail)+'</div>';
+          }).join('')+'</div></div>';
       }).join('') +'</div>'+
 
     '<div>'+
@@ -764,7 +927,12 @@ function wAccount(p, prog, wk){
 function openLogModal(p, prog){
   const nx = nextRunOf(prog);
   if(!nx) return;
-  STATE.draft = { key:nx.key, pd:2, pa:1, b:null, step:0, km:nx.km, day:nx.i };
+  const items = itemsOn(p, prog, prog.current, nx.i);
+  const done = {};
+  items.forEach(function(it){ done[it.key] = (nx.log && nx.log.done && nx.log.done[it.key]) || null; });
+  STATE.draft = { key:nx.key, day:nx.i, items:items, done:done,
+                  pd: nx.log ? nx.log.pd : 2, pa: nx.log ? nx.log.pa : 1,
+                  b: nx.log ? nx.log.b : null, step:0 };
   drawLogModal(p);
   $('#scrim').classList.add('on');
 }
@@ -783,25 +951,42 @@ function painScale(id, val){
 
 function drawLogModal(p){
   const d = STATE.draft;
-  const face = function(v){ return v<=2?'🙂':(v<=4?'😐':(v<=6?'😕':(v<=8?'😖':'😣'))); };
+  const face = function(v){ return v<=2?'\ud83d\ude42':(v<=4?'\ud83d\ude10':(v<=6?'\ud83d\ude15':(v<=8?'\ud83d\ude16':'\ud83d\ude23'))); };
   const word = function(v){ return ['None','Barely there','Mild','Mild','Noticeable','Moderate','Moderate','Strong','Strong','Severe','Worst imaginable'][v]; };
+  const allAnswered = d.items.every(function(it){ return d.done[it.key]; });
+
+  const dots = [0,1,2,3].map(function(i){ return '<i class="'+(d.step>=i?'on':'')+'"></i>'; }).join('');
 
   $('#modal').innerHTML =
-    '<div class="modal-h"><div style="flex:1"><div style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:650">'+DAYSL[d.day]+' · '+r1(d.km)+' km</div>'+
-      '<h3 style="font-size:16px;margin-top:2px">Log your run</h3></div>'+
-      '<div class="stepdots"><i class="'+(d.step>=0?'on':'')+'"></i><i class="'+(d.step>=1?'on':'')+'"></i><i class="'+(d.step>=2?'on':'')+'"></i></div></div>'+
+    '<div class="modal-h"><div style="flex:1"><div style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:650">'+
+      DAYSL[d.day]+' \u00b7 '+d.items.length+' item'+(d.items.length>1?'s':'')+'</div>'+
+      '<h3 style="font-size:16px;margin-top:2px">Log your session</h3></div>'+
+      '<div class="stepdots">'+dots+'</div></div>'+
 
     '<div class="modal-b">'+
       '<div class="step '+(d.step===0?'on':'')+'">'+
-        '<h4 style="font-size:15.5px;margin-bottom:3px">How much pain during the run?</h4>'+
-        '<div style="font-size:12.5px;color:var(--muted);margin-bottom:20px">At its worst, while you were running.</div>'+
+        '<h4 style="font-size:15.5px;margin-bottom:3px">What did you get through?</h4>'+
+        '<div style="font-size:12.5px;color:var(--muted);margin-bottom:18px">One tap each. Partly done is useful information, not a failure.</div>'+
+        d.items.map(function(it){
+          const v = d.done[it.key];
+          return '<div class="doneitem"><div class="dn2">'+it.name+'</div><div class="dd2">'+it.detail+'</div>'+
+            '<div class="done3" data-item="'+it.key+'">'+
+              '<button data-done="full" class="'+(v==='full'?'on-f':'')+'">All of it</button>'+
+              '<button data-done="partial" class="'+(v==='partial'?'on-p':'')+'">Some of it</button>'+
+              '<button data-done="skipped" class="'+(v==='skipped'?'on-s':'')+'">Skipped</button>'+
+            '</div></div>';
+        }).join('')+'</div>'+
+
+      '<div class="step '+(d.step===1?'on':'')+'">'+
+        '<h4 style="font-size:15.5px;margin-bottom:3px">How much pain during the session?</h4>'+
+        '<div style="font-size:12.5px;color:var(--muted);margin-bottom:20px">At its worst, while you were moving.</div>'+
         '<div style="display:flex;align-items:center;gap:14px;margin-bottom:14px"><div style="font-size:34px">'+face(d.pd)+'</div>'+
           '<div><div class="painval">'+d.pd+'<span style="font-size:15px;color:var(--muted);font-weight:600">/10</span></div>'+
           '<div style="font-size:12.5px;color:var(--muted);font-weight:600">'+word(d.pd)+'</div></div></div>'+
         painScale('sc-pd', d.pd)+
         '<div class="scaleends"><span>No pain</span><span>Worst imaginable</span></div></div>'+
 
-      '<div class="step '+(d.step===1?'on':'')+'">'+
+      '<div class="step '+(d.step===2?'on':'')+'">'+
         '<h4 style="font-size:15.5px;margin-bottom:3px">And the next morning?</h4>'+
         '<div style="font-size:12.5px;color:var(--muted);margin-bottom:20px">Your first few steps out of bed.</div>'+
         '<div style="display:flex;align-items:center;gap:14px;margin-bottom:14px"><div style="font-size:34px">'+face(d.pa)+'</div>'+
@@ -810,17 +995,24 @@ function drawLogModal(p){
         painScale('sc-pa', d.pa)+
         '<div class="scaleends"><span>No pain</span><span>Worst imaginable</span></div></div>'+
 
-      '<div class="step '+(d.step===2?'on':'')+'">'+
+      '<div class="step '+(d.step===3?'on':'')+'">'+
         '<h4 style="font-size:15.5px;margin-bottom:3px">Are your symptoms back to normal?</h4>'+
-        '<div style="font-size:12.5px;color:var(--muted);margin-bottom:20px">Back to how they were before this run.</div>'+
+        '<div style="font-size:12.5px;color:var(--muted);margin-bottom:20px">Back to how they were before this session.</div>'+
         '<div class="yn"><button id="yn-y" class="'+(d.b==='yes'?'on-y':'')+'">Yes, settled</button>'+
         '<button id="yn-n" class="'+(d.b==='no'?'on-n':'')+'">No, still there</button></div>'+
-        '<div style="margin-top:16px;font-size:12px;color:var(--muted);line-height:1.55">Answer honestly. Saying &ldquo;no&rdquo; does not mean you failed — it tells the plan to give you more room.</div></div>'+
+        '<div style="margin-top:16px;font-size:12px;color:var(--muted);line-height:1.55">Answer honestly. Saying &ldquo;no&rdquo; does not mean you failed \u2014 it tells the plan to give you more room.</div></div>'+
     '</div>'+
 
     '<div class="modal-f"><button class="btn" id="m-back" style="flex:0 0 auto">'+(d.step===0?'Cancel':'Back')+'</button>'+
-      '<button class="btn btn-p" id="m-next" style="flex:1;justify-content:center'+(d.step===2&&!d.b?';opacity:.45':'')+'">'+(d.step===2?'Save run':'Continue')+'</button></div>';
+      '<button class="btn btn-p" id="m-next" style="flex:1;justify-content:center'+
+        (((d.step===0 && !allAnswered) || (d.step===3 && !d.b)) ? ';opacity:.45' : '')+'">'+
+        (d.step===3?'Save session':'Continue')+'</button></div>';
 
+  $$('.done3').forEach(function(row){
+    $$('#modal .done3[data-item="'+row.dataset.item+'"] button').forEach(function(b){
+      b.onclick = function(){ STATE.draft.done[row.dataset.item] = b.dataset.done; drawLogModal(p); };
+    });
+  });
   $$('#sc-pd button').forEach(function(b){ b.onclick=function(){ STATE.draft.pd = +b.dataset.v; drawLogModal(p); }; });
   $$('#sc-pa button').forEach(function(b){ b.onclick=function(){ STATE.draft.pa = +b.dataset.v; drawLogModal(p); }; });
   const y=$('#yn-y'), n=$('#yn-n');
@@ -829,13 +1021,15 @@ function drawLogModal(p){
 
   $('#m-back').onclick = function(){ if(d.step===0) closeModal(); else { STATE.draft.step--; drawLogModal(p); } };
   $('#m-next').onclick = function(){
-    if(d.step<2){ STATE.draft.step++; drawLogModal(p); return; }
+    if(d.step===0 && !allAnswered){ toast('Answer each item first'); return; }
+    if(d.step<3){ STATE.draft.step++; drawLogModal(p); return; }
     if(!d.b) return;
-    p.logs[d.key] = { pd:d.pd, pa:d.pa, b:d.b };
+    p.logs[d.key] = { pd:d.pd, pa:d.pa, b:d.b, done:Object.assign({}, d.done) };
     closeModal();
     const prog2 = computeProgram(p, CFG);
-    const s = runScore(p.logs[d.key], CFG);
-    toast('Run saved — response score ' + s.toFixed(2) + (prog2.current.flags.some(function(f){return f.sev==='high';}) ? ' · your physiotherapist has been alerted' : ''));
+    const sc = runScore(p.logs[d.key], algoFor(p, CFG));
+    toast('Session saved \u2014 response score ' + sc.toFixed(2) +
+      (prog2.current.flags.some(function(f){return f.sev==='high';}) ? ' \u00b7 your physiotherapist has been alerted' : ''));
     render();
   };
 }
@@ -962,6 +1156,8 @@ function renderPatientDetail(){
 
   $('#btnBack').onclick = function(){ STATE.clinPatient=null; render(); };
   $$('[data-msgpt]').forEach(function(el){ el.onclick=function(){ openChat(el.dataset.msgpt); }; });
+  $$('[data-editproto]').forEach(function(el){ el.onclick=function(){
+    STATE.view='admin'; STATE.adminTab='protocols'; STATE.protoEdit=el.dataset.editproto; render(); }; });
   bindBuilder(p);
   $$('[data-week]').forEach(function(el){ el.onclick=function(){ STATE.openWeek = (STATE.openWeek===+el.dataset.week ? null : +el.dataset.week); render(); }; });
   $$('[data-override]').forEach(function(el){ el.onclick=function(e){ e.stopPropagation(); overrideModal(p, +el.dataset.override); }; });
@@ -970,7 +1166,9 @@ function renderPatientDetail(){
 function weekTable(p, prog){
   return '<div class="card"><div class="card-h"><h3>Week by week</h3>'+
     '<span class="hint">click a week to see every run</span></div>'+
-    '<table><thead><tr><th>Wk</th><th>Dates</th><th>Volume</th><th>Runs</th><th>Response score</th><th>Decision</th><th>Next</th><th></th></tr></thead><tbody>'+
+    '<table><thead><tr><th>Wk</th><th>Dates</th><th>Volume</th>'+
+      (prog.ladders.length ? '<th>'+prog.ladders[0].name+'</th>' : '')+
+      '<th>Sessions</th><th>Response score</th><th>Decision</th><th>Next</th><th></th></tr></thead><tbody>'+
     prog.weeks.map(function(w){
       const st = STATUS[w.status], open = STATE.openWeek===w.w;
       const ov = p.overrides && p.overrides[w.w];
@@ -979,6 +1177,10 @@ function weekTable(p, prog){
         '<td style="font-size:12px;color:var(--muted);white-space:nowrap">'+fmtDate(w.start)+'</td>'+
         '<td class="mono"><b>'+r1(w.vol)+'</b> km'+(w.atGoal?' <span class="tag" style="background:var(--blue-soft);color:var(--blue)">goal</span>':'')+
           (ov?' <span class="tag" style="background:var(--amber-soft);color:var(--amber)">manual</span>':'')+'</td>'+
+        (prog.ladders.length ? '<td class="mono" style="font-size:12.5px">'+
+            ((w.levels[prog.ladders[0].key]||0)+1)+'/'+prog.ladders[0].rungs.length+
+            (w.ladderMove==='advance' ? ' <span style="color:var(--green)">↑</span>'
+             : w.ladderMove==='regress' ? ' <span style="color:var(--red)">↓</span>' : '')+'</td>' : '')+
         '<td class="mono" style="font-size:12.5px">'+w.logged.length+'/'+w.prescribed.length+'</td>'+
         '<td class="mono">'+(w.score!==null ? '<b>'+w.score.toFixed(3)+'</b>' : '<span style="color:var(--muted)">—</span>')+'</td>'+
         '<td><span class="pill '+st.cls+'"><span class="dot '+st.dot+'"></span>'+st.lbl+'</span></td>'+
@@ -986,14 +1188,24 @@ function weekTable(p, prog){
         '<td style="text-align:right"><button class="btn btn-sm" data-override="'+w.w+'">Override</button></td></tr>';
 
       if(open){
-        row += '<tr><td colspan="8" style="background:var(--surface-2);padding:14px 16px">'+
+        row += '<tr><td colspan="'+(prog.ladders.length?9:8)+'" style="background:var(--surface-2);padding:14px 16px">'+
           '<div style="font-size:12.5px;color:var(--ink-2);margin-bottom:10px">'+w.why+'</div>'+
           '<table style="background:var(--surface);border:1px solid var(--line);border-radius:9px;overflow:hidden">'+
-          '<thead><tr><th>Day</th><th>Prescribed</th><th>Pain during</th><th>Pain next am</th><th>Back to baseline</th><th>Run score</th><th>Weight</th></tr></thead><tbody>'+
+          '<thead><tr><th>Day</th><th>Session</th><th>Completed</th><th>Pain during</th><th>Pain next am</th><th>Back to baseline</th><th>Score</th><th>Weight</th></tr></thead><tbody>'+
           w.prescribed.map(function(d){
-            const share = w.vol ? d.km/w.vol : 0;
+            const totLoad = sum(w.prescribed.map(function(x){ return x.load; }));
+            const share = totLoad ? d.load/totLoad : 0;
+            const its = itemsOn(p, prog, w, d.i);
+            const dn = (d.log && d.log.done) || {};
+            const dnTxt = its.map(function(it){
+              const v = dn[it.key];
+              return v ? (v==='full' ? '✓' : v==='partial' ? '½' : '✗')+' '+it.name : '— '+it.name;
+            }).join('<br>');
             return '<tr><td><b>'+DAYSL[d.i]+'</b><br><span style="font-size:11px;color:var(--muted)">'+fmtDate(d.date)+'</span></td>'+
-              '<td class="mono">'+r1(d.km)+' km</td>'+
+              '<td style="font-size:12px">'+its.map(function(it){
+                return it.type==='volume' ? '<b>'+r1(it.km)+' km</b>' : it.name+' · step '+(it.level+1);
+              }).join('<br>')+'</td>'+
+              '<td style="font-size:11.5px;color:var(--ink-2)">'+(d.log ? dnTxt : '—')+'</td>'+
               (d.log
                 ? '<td class="mono">'+d.log.pd+'/10</td><td class="mono">'+d.log.pa+'/10</td>'+
                   '<td>'+(d.log.b==='yes'?'<span class="pill pill-g">Yes</span>':'<span class="pill pill-r">No</span>')+'</td>'+
@@ -1047,18 +1259,41 @@ function volumeChart(p, prog, maxV){
 }
 
 function mathsCard(p, prog){
-  return '<div class="card"><div class="card-h"><h3>How the decision is made</h3>'+
-    '<span class="hint">how each week is graded</span></div><div class="card-b" style="font-size:12.5px;line-height:1.65;color:var(--ink-2)">'+
-    '<div style="background:var(--surface-2);border:1px solid var(--line);border-radius:9px;padding:11px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11.5px;margin-bottom:12px">'+
-      'run score = 0.4·(1 − 0.025·P<sub>during</sub>)<br>'+
-      '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;+ 0.4·(1 − 0.025·P<sub>after</sub>)<br>'+
-      '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;+ 0.2·(baseline ? 1 : 0.5)<br><br>'+
-      'week score = Σ(km · score) ÷ Σ(km)</div>'+
-    '<div class="kv"><span class="k">≥ '+CFG.greenAt+'</span><span class="v" style="color:var(--green)">increase '+pct(p.inc)+'%</span></div>'+
-    '<div class="kv"><span class="k">≥ '+CFG.yellowAt+'</span><span class="v" style="color:var(--amber)">hold</span></div>'+
-    '<div class="kv"><span class="k">below '+CFG.yellowAt+'</span><span class="v" style="color:var(--red)">reduce '+pct(CFG.deload)+'%</span></div>'+
-    '<div class="note" style="margin-top:12px">When symptoms return to baseline the score simplifies to <b>1 − 0.01·(P<sub>during</sub> + P<sub>after</sub>)</b>. '+
-    'So the rule you are actually applying is: <b>settled, and combined pain ≤ 9 → progress</b>; combined pain = 10 → hold; anything else → deload.</div>'+
+  const A = prog.algo, pr = prog.protocol;
+  const f = function(n){ return (+n).toFixed(2).replace(/\.00$/,'.0'); };
+  return '<div class="card"><div class="card-h"><h3>Protocol &amp; algorithm</h3>'+
+    '<span class="hint">these settings come from the protocol</span></div>'+
+    '<div class="card-b" style="font-size:12.5px;line-height:1.6;color:var(--ink-2)">'+
+
+    '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">'+
+      '<span class="pill pill-b">'+pr.name+'</span>'+
+      '<span class="spacer"></span>'+
+      '<button class="btn btn-sm" data-editproto="'+pr.id+'">Edit protocol</button></div>'+
+
+    '<span class="lbl">What the patient does</span>'+
+    prog.streams.map(function(st){
+      if(st.type==='volume') return '<div class="kv"><span class="k">'+st.name+'</span>'+
+        '<span class="v">'+prog.goalTotal+' km goal \u00b7 +'+pct(p.inc)+'% per green week</span></div>';
+      const lvl = prog.current.levels[st.key] || 0;
+      return '<div class="kv"><span class="k">'+st.name+'</span>'+
+        '<span class="v">step '+(lvl+1)+' of '+st.rungs.length+' \u00b7 advances after '+(A.dwell||2)+' green weeks</span></div>';
+    }).join('')+
+
+    '<span class="lbl" style="margin-top:14px">How answers are weighted</span>'+
+    '<div class="calc" style="margin-bottom:10px">'+
+      'score = '+f(A.wDuring)+' \u00d7 (1 \u2212 '+A.painStep+' \u00d7 P<sub>during</sub>)<br>'+
+      '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;+ '+f(A.wAfter)+' \u00d7 (1 \u2212 '+A.painStep+' \u00d7 P<sub>after</sub>)<br>'+
+      '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;+ '+f(A.wBaseline)+' \u00d7 (settled ? 1 : '+A.baselineNoValue+')</div>'+
+    '<div class="kv"><span class="k">\u2265 '+A.greenAt+'</span><span class="v" style="color:var(--green)">increase '+pct(p.inc)+'%</span></div>'+
+    '<div class="kv"><span class="k">\u2265 '+A.yellowAt+'</span><span class="v" style="color:var(--amber)">hold</span></div>'+
+    '<div class="kv"><span class="k">below '+A.yellowAt+'</span><span class="v" style="color:var(--red)">reduce '+pct(A.deload)+'%</span></div>'+
+    '<div class="kv"><span class="k">red flag at</span><span class="v">'+A.flagPainDuring+'/10 during \u00b7 '+A.flagPainAfter+'/10 after</span></div>'+
+
+    '<div class="note" style="margin-top:12px">'+
+      (Math.abs(A.wAfter - A.wDuring) > 0.05
+        ? 'This protocol weights <b>'+(A.wAfter > A.wDuring ? 'the next morning' : 'pain during the session')+'</b> more heavily than the other answer. '
+        : 'This protocol weights both pain answers equally. ')+
+      'Change it in the protocol and every patient on it is graded the new way from their next week.</div>'+
     '</div></div>';
 }
 
@@ -1147,225 +1382,361 @@ function renderAdmin(){
   ({protocols:adProtocols, algorithm:adAlgorithm, accounts:adAccounts, clinic:adClinic})[STATE.adminTab]();
 }
 
+/* one place that turns an algorithm into something readable, used by the
+   protocol editor and by the clinic-defaults page */
+function plainRules(A){
+  const evenPain = Math.abs(A.wDuring - A.wAfter) < 1e-9 && A.wDuring > 0 && A.painStep > 0;
+  const combinedFor = function(th){ return (2 - (th - A.wBaseline)/A.wDuring) / A.painStep; };
+  const gMax = evenPain ? Math.floor(combinedFor(A.greenAt) + 1e-9) : null;
+  const hMax = evenPain ? Math.floor(combinedFor(A.yellowAt) + 1e-9) : null;
+  const best = A.wDuring + A.wAfter + A.wBaseline * A.baselineNoValue;
+  const verdict = best >= A.greenAt ? 'can still progress'
+                : best >= A.yellowAt ? 'can at best hold \u2014 it can never progress'
+                : 'always reduces the volume';
+  let h = '';
+  if(evenPain && gMax >= 0 && gMax <= 20){
+    h += '<li>If symptoms settle, a week <b>progresses</b> when pain during plus pain next morning totals <b>'+gMax+' or less</b> out of 20.</li>'+
+         '<li>Totalling <b>'+(hMax > gMax + 1 ? (gMax+1)+'\u2013'+hMax : String(hMax))+'</b> <b>holds</b>. Higher <b>reduces</b> by '+pct(A.deload)+'%.</li>';
+  } else {
+    h += '<li>The two pain answers carry different weights, so there is no single combined cut-off. '+
+         (A.wAfter > A.wDuring ? 'The <b>next morning</b> matters more.' : 'Pain <b>during</b> matters more.')+' Read the grid.</li>';
+  }
+  h += '<li>If symptoms have <b>not</b> settled, the best a session scores is <b>'+best.toFixed(2)+'</b>, so it '+verdict+'.</li>';
+  h += '<li>A ladder step is earned after <b>'+(A.dwell||2)+' consecutive green weeks</b>, and lost on any red week.</li>';
+  return h;
+}
+
+function decisionMatrix(A, settled){
+  let h = '<table class="mx"><tbody>';
+  for(let pd = 0; pd <= 10; pd++){
+    h += '<tr><th>'+pd+'</th>';
+    for(let pa = 0; pa <= 10; pa++){
+      const sc = runScore({pd:pd, pa:pa, b: settled ? 'yes' : 'no'}, A);
+      const k  = sc >= A.greenAt ? 'g' : (sc >= A.yellowAt ? 'a' : 'r');
+      h += '<td class="mx-'+k+'" title="during '+pd+', next morning '+pa+' \u2192 '+sc.toFixed(3)+'"></td>';
+    }
+    h += '</tr>';
+  }
+  h += '</tbody><tfoot><tr><th></th>';
+  for(let pa = 0; pa <= 10; pa++) h += '<th>'+pa+'</th>';
+  h += '</tr></tfoot></table>';
+  return '<div><div style="font-weight:660;font-size:12.5px;margin-bottom:9px">'+
+           (settled ? 'Symptoms settled' : 'Symptoms not settled')+'</div>'+
+         '<div style="font-size:10px;color:var(--muted);font-weight:700;letter-spacing:.06em;text-transform:uppercase;margin-bottom:5px">Pain next morning \u2192</div>'+
+         h + '</div>';
+}
+function matrixPair(A){
+  return '<div style="display:flex;gap:10px"><div style="writing-mode:vertical-rl;transform:rotate(180deg);font-size:10px;color:var(--muted);font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding-top:22px">Pain during \u2193</div>'+
+    '<div class="mxwrap">'+ decisionMatrix(A,true) + decisionMatrix(A,false) +'</div></div>'+
+    '<div class="mxkey"><span><i class="mx-g"></i>Progress</span><span><i class="mx-a"></i>Hold</span><span><i class="mx-r"></i>Reduce</span></div>';
+}
+
 function adProtocols(){
+  if(STATE.protoEdit) return protocolEditor();
   $('#adminBody').innerHTML =
-    '<div class="note" style="margin-bottom:16px">A protocol is a saved set of defaults. The clinician picks one at the start of a programme and can still adjust the goal volume and running days per patient — but the thresholds and the safety rules are yours, not theirs.</div>'+
+    '<div class="note" style="margin-bottom:16px">A protocol answers three things: <b>what the patient does</b>, <b>what we ask them afterwards</b>, and <b>how their answers change next week</b>. The clinician picks one at the start of a programme and still sets the goal and the running days per patient.</div>'+
     '<div class="card"><div class="card-h"><h3>Protocol templates</h3><span class="spacer"></span>'+
       '<button class="btn btn-sm btn-p" data-proto="new">+ New protocol</button></div>'+
-      '<table><thead><tr><th>Name</th><th>Starting reduction</th><th>Weekly increase</th><th>Length</th>'+
-      '<th>Weeks to goal</th><th>In use</th><th>Guidance shown to clinician</th><th></th></tr></thead><tbody>'+
+      '<table><thead><tr><th>Name</th><th>Region</th><th>What the patient does</th><th>Start</th><th>Per green week</th>'+
+      '<th>Weighting</th><th>In use</th><th></th></tr></thead><tbody>'+
       PROTOCOLS.map(function(x){
-        const wtg = Math.ceil(Math.log(1/(1-x.red))/Math.log(1+x.inc));
-        return '<tr><td><b>'+x.name+'</b></td><td class="mono">'+pct(x.red)+'%</td><td class="mono">'+pct(x.inc)+'%</td>'+
-          '<td class="mono">'+x.weeks+' wks</td>'+
-          '<td class="mono">'+wtg+'<span style="color:var(--muted)"> green weeks</span></td>'+
-          '<td><span class="pill pill-n">'+x.uses+' programmes</span></td>'+
-          '<td style="font-size:12px;color:var(--ink-2);max-width:300px">'+x.note+'</td>'+
+        const A = Object.assign({}, CFG, x.algo||{});
+        const lean = Math.abs(A.wAfter-A.wDuring) < 0.05 ? 'even'
+                   : (A.wAfter > A.wDuring ? 'next morning' : 'during session');
+        return '<tr class="click" data-proto="'+x.id+'">'+
+          '<td><b>'+x.name+'</b><div style="font-size:11.5px;color:var(--muted);max-width:260px">'+x.note+'</div></td>'+
+          '<td style="font-size:12.5px">'+(x.region||'\u2014')+'</td>'+
+          '<td style="font-size:12px">'+(x.streams||[]).map(function(st){
+            return st.type==='volume' ? '\u25b8 '+st.name+' (volume)'
+                                      : '\u25b8 '+st.name+' ('+st.rungs.length+'-step ladder)'; }).join('<br>')+'</td>'+
+          '<td class="mono">'+pct(x.red)+'% off</td>'+
+          '<td class="mono">+'+pct(x.inc)+'%</td>'+
+          '<td style="font-size:12px">'+lean+'</td>'+
+          '<td><span class="pill pill-n">'+x.uses+'</span></td>'+
           '<td style="text-align:right"><button class="btn btn-sm" data-proto="'+x.id+'">Edit</button></td></tr>';
-      }).join('') +'</tbody></table></div>'+
-
-    '';
-  $$('[data-proto]').forEach(function(b){ b.onclick=function(){ protocolModal(b.dataset.proto); }; });
+      }).join('') +'</tbody></table></div>';
+  $$('[data-proto]').forEach(function(b){ b.onclick=function(e){ e.stopPropagation(); STATE.protoEdit=b.dataset.proto; render(); }; });
 }
 
-/* ---------- protocol editor ---------- */
-function weeksToGoalOf(red, inc){
-  return inc > 0 ? Math.ceil(Math.log(1/(1-red))/Math.log(1+inc)) : null;
-}
+/* ---------- the protocol builder ---------- */
+function protocolEditor(){
+  const isNew = STATE.protoEdit === 'new';
+  const src = isNew ? null : PROTOCOLS.filter(function(x){ return x.id===STATE.protoEdit; })[0];
+  if(!isNew && !src){ STATE.protoEdit = null; return adProtocols(); }
 
-function protocolModal(id){
-  const isNew = (id === 'new');
-  const src = isNew ? {id:'', name:'', red:0.35, inc:0.10, weeks:12, note:'', uses:0}
-                    : PROTOCOLS.filter(function(x){ return x.id===id; })[0];
-  if(!src) return;
-  const d = {name:src.name, red:src.red, inc:src.inc, weeks:src.weeks, note:src.note};
-
-  function wtgText(){
-    const n = weeksToGoalOf(d.red, d.inc);
-    if(n === null) return 'With no weekly increase, this protocol never reaches the goal volume on its own.';
-    return 'Week 1 starts at <b>'+Math.round((1-d.red)*100)+'%</b> of the goal. With every week graded green, '+
-           'the goal is reached after <b>'+n+' week'+(n===1?'':'s')+'</b>'+
-           (n > d.weeks ? ' — longer than the '+d.weeks+'-week length set here.'
-                        : ', so the remaining '+(d.weeks-n)+' week'+((d.weeks-n)===1?'':'s')+' allow for holds and deloads.');
+  if(!STATE.protoDraft || STATE.protoDraft.__for !== STATE.protoEdit){
+    const base = src || { name:'', region:'', note:'', red:0.35, inc:0.10, weeks:12, uses:0,
+                          algo:{}, streams:[{key:'run', type:'volume', name:'Running', unit:'km'}] };
+    STATE.protoDraft = {
+      __for: STATE.protoEdit,
+      name: base.name, region: base.region || '', note: base.note || '',
+      red: base.red, inc: base.inc, weeks: base.weeks,
+      algo: Object.assign({}, CFG, base.algo || {}),
+      streams: JSON.parse(JSON.stringify(base.streams || []))
+    };
   }
+  const D = STATE.protoDraft, A = D.algo;
 
-  $('#modal').innerHTML =
-    '<div class="modal-h"><div style="flex:1"><div style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:650">'+
-      (isNew ? 'New protocol' : 'Editing · '+src.uses+' programme'+(src.uses===1?'':'s')+' using this')+'</div>'+
-      '<h3 style="font-size:16px;margin-top:2px">'+(isNew ? 'Create a protocol' : src.name)+'</h3></div></div>'+
-    '<div class="modal-b">'+
-      '<label class="field"><span class="lbl">Name</span>'+
-        '<input id="pf-name" value="'+String(d.name).replace(/"/g,'&quot;')+'" placeholder="e.g. Bone stress injury — cautious"></label>'+
-      '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">'+
-        '<label class="field" style="margin:0"><span class="lbl">Start reduction</span>'+
-          '<input type="number" id="pf-red" min="0" max="90" step="5" value="'+Math.round(d.red*100)+'"></label>'+
-        '<label class="field" style="margin:0"><span class="lbl">Weekly increase</span>'+
-          '<input type="number" id="pf-inc" min="0" max="50" step="1" value="'+Math.round(d.inc*100)+'"></label>'+
-        '<label class="field" style="margin:0"><span class="lbl">Length (weeks)</span>'+
-          '<input type="number" id="pf-weeks" min="2" max="26" step="1" value="'+d.weeks+'"></label>'+
-      '</div>'+
-      '<label class="field"><span class="lbl">Guidance shown to the clinician</span>'+
-        '<input id="pf-note" value="'+String(d.note).replace(/"/g,'&quot;')+'" placeholder="What this protocol assumes, and when to pick it"></label>'+
-      '<div class="note" id="pf-wtg">'+wtgText()+'</div>'+
-    '</div>'+
-    '<div class="modal-f">'+
-      (isNew ? '' : '<button class="btn" id="pf-del" style="flex:0 0 auto">Delete</button>')+
-      '<button class="btn" onclick="closeModal()" style="flex:0 0 auto">Cancel</button>'+
-      '<button class="btn btn-p" id="pf-save" style="flex:1;justify-content:center">'+(isNew?'Create protocol':'Save changes')+'</button></div>';
-
-  function sync(){
-    d.red   = Math.min(0.9,  Math.max(0, (+$('#pf-red').value   || 0)/100));
-    d.inc   = Math.min(0.5,  Math.max(0, (+$('#pf-inc').value   || 0)/100));
-    d.weeks = Math.min(26,   Math.max(2,  +$('#pf-weeks').value || 2));
-    $('#pf-wtg').innerHTML = wtgText();
-  }
-  ['pf-red','pf-inc','pf-weeks'].forEach(function(k){ $('#'+k).oninput = sync; });
-
-  $('#pf-save').onclick = function(){
-    sync();
-    d.name = $('#pf-name').value.trim();
-    d.note = $('#pf-note').value.trim();
-    if(!d.name){ toast('Give the protocol a name'); $('#pf-name').focus(); return; }
-    if(isNew){
-      PROTOCOLS.push({ id:'x'+(PROTOCOLS.length+1), name:d.name, red:d.red, inc:d.inc,
-                       weeks:d.weeks, note:d.note || 'No guidance set.', uses:0 });
-      toast('Protocol created — audit logged');
-    } else {
-      src.name=d.name; src.red=d.red; src.inc=d.inc; src.weeks=d.weeks;
-      src.note=d.note || 'No guidance set.';
-      toast('Protocol saved — audit logged');
+  /* what this protocol produces, run forward with every week green */
+  const preview = (function(){
+    const goal = 30; let vol = goal*(1-D.red), lvl = 0, run = 0, rows = [];
+    const lad = D.streams.filter(function(x){ return x.type==='ladder'; })[0];
+    for(let w=1; w<=Math.min(D.weeks, 8); w++){
+      rows.push({ w:w, pct: Math.round(vol/goal*100), lvl:lvl });
+      run++; if(run >= (A.dwell||2)){ run = 0; if(lad) lvl = Math.min(lad.rungs.length-1, lvl+1); }
+      vol = Math.min(goal, vol*(1+D.inc));
     }
-    closeModal(); render();
+    return { rows:rows, lad:lad };
+  })();
+
+  $('#adminBody').innerHTML =
+    '<div style="display:flex;align-items:center;gap:12px;margin-bottom:18px;flex-wrap:wrap">'+
+      '<button class="btn btn-sm" id="pe-back">\u2039 All protocols</button>'+
+      '<div style="flex:1 1 200px;min-width:0"><h2 style="font-size:19px">'+(isNew ? 'New protocol' : D.name)+'</h2>'+
+      '<div style="font-size:12.5px;color:var(--muted)">'+(isNew ? 'Define what the patient does and how their answers change it'
+        : src.uses+' programme'+(src.uses===1?'':'s')+' currently using this')+'</div></div>'+
+      (isNew ? '' : '<button class="btn btn-sm" id="pe-del">Delete</button>')+
+      '<button class="btn btn-sm" id="pe-cancel">Cancel</button>'+
+      '<button class="btn btn-sm btn-p" id="pe-save">'+(isNew?'Create protocol':'Save changes')+'</button>'+
+    '</div>'+
+
+    '<div class="grid dgrid" style="align-items:start"><div>'+
+
+    '<div class="sect"><div class="sect-h"><span class="sect-n">1</span><div style="flex:1"><h3>What this protocol is for</h3>'+
+      '<div class="sh">How it appears to the clinician choosing it</div></div></div><div class="sect-b">'+
+      '<label class="field"><span class="lbl">Name</span><input id="pe-name" value="'+String(D.name).replace(/"/g,'&quot;')+'" placeholder="e.g. Mid-portion Achilles tendinopathy"></label>'+
+      '<div style="display:grid;grid-template-columns:2fr 1fr;gap:10px">'+
+        '<label class="field"><span class="lbl">Body region</span><input id="pe-region" value="'+String(D.region).replace(/"/g,'&quot;')+'" placeholder="e.g. Achilles / calf"></label>'+
+        '<label class="field"><span class="lbl">Length (weeks)</span><input type="number" id="pe-weeks" min="2" max="26" value="'+D.weeks+'"></label>'+
+      '</div>'+
+      '<label class="field" style="margin:0"><span class="lbl">Guidance shown to the clinician</span>'+
+        '<input id="pe-note" value="'+String(D.note).replace(/"/g,'&quot;')+'" placeholder="What this protocol assumes, and when to pick it"></label>'+
+    '</div></div>'+
+
+    '<div class="sect"><div class="sect-h"><span class="sect-n">2</span><div style="flex:1"><h3>What the patient does</h3>'+
+      '<div class="sh">A volume stream scales by percentage. A ladder moves one step at a time.</div></div></div><div class="sect-b">'+
+      D.streams.map(function(st, i){
+        if(st.type === 'volume'){
+          return '<div class="streamcard"><div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">'+
+            '<span class="pill pill-b">Volume</span><b style="font-size:13.5px">'+st.name+'</b>'+
+            '<span class="spacer"></span><span style="font-size:11.5px;color:var(--muted)">measured in '+(st.unit||'km')+'</span></div>'+
+            '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'+
+              '<label class="field" style="margin:0"><span class="lbl">Start at this much below goal</span>'+
+                '<input type="number" id="pe-red" min="0" max="90" step="5" value="'+Math.round(D.red*100)+'"></label>'+
+              '<label class="field" style="margin:0"><span class="lbl">Increase per green week</span>'+
+                '<input type="number" id="pe-inc" min="0" max="50" step="1" value="'+Math.round(D.inc*100)+'"></label>'+
+            '</div>'+
+            '<div style="font-size:12px;color:var(--muted);line-height:1.5">The goal distance and which days they run are set per patient, not here.</div></div>';
+        }
+        return '<div class="streamcard"><div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">'+
+          '<span class="pill pill-n">Ladder</span>'+
+          '<input data-sname="'+i+'" value="'+String(st.name).replace(/"/g,'&quot;')+'" style="flex:1;min-width:0;padding:6px 9px;border:1px solid var(--line);border-radius:8px;font-weight:650">'+
+          '<button class="btn btn-sm" data-sdel="'+i+'">Remove</button></div>'+
+          '<span class="lbl">Days it is done</span>'+
+          '<div class="daypick" style="margin-bottom:14px">'+DAYS.map(function(dn, di){
+            return '<button data-sday="'+i+'-'+di+'" class="'+((st.days||[]).indexOf(di)>=0?'on':'')+'">'+dn+'</button>';
+          }).join('')+'</div>'+
+          '<span class="lbl">Steps, easiest first \u2014 one per line</span>'+
+          '<textarea class="rungs" data-srungs="'+i+'">'+(st.rungs||[]).join('\n')+'</textarea>'+
+          '<div style="font-size:12px;color:var(--muted);margin-top:7px">'+(st.rungs||[]).length+' steps. '+
+            'The patient starts on step 1 unless the clinician moves them.</div></div>';
+      }).join('')+
+      '<button class="btn btn-sm" id="pe-addladder">+ Add a ladder</button>'+
+    '</div></div>'+
+
+    '<div class="sect"><div class="sect-h"><span class="sect-n">3</span><div style="flex:1"><h3>What the patient is asked</h3>'+
+      '<div class="sh">The same three questions for every protocol, so logging stays quick</div></div></div><div class="sect-b">'+
+      '<div style="font-size:13px;line-height:1.9;color:var(--ink-2)">'+
+        '<b>1.</b> Did you get through each item? <span style="color:var(--muted)">All of it / some of it / skipped \u2014 one tap per item</span><br>'+
+        '<b>2.</b> Pain during the session <span style="color:var(--muted)">0\u201310</span><br>'+
+        '<b>3.</b> Pain the next morning <span style="color:var(--muted)">0\u201310</span><br>'+
+        '<b>4.</b> Are symptoms back to normal? <span style="color:var(--muted)">yes / no</span></div>'+
+      '<div class="note" style="margin-top:12px">Fixed on purpose. Twenty seconds is what keeps people logging, and every extra question costs adherence.</div>'+
+      (D.streams.filter(function(x){return x.type==='ladder';}).length
+        ? '<label class="field" style="margin-top:14px;margin-bottom:0"><span class="lbl">How much a ladder session counts, in kilometre-equivalents</span>'+
+          '<input type="number" id="pe-ladderload" min="0" max="20" step="1" value="'+(A.ladderLoad||3)+'" style="max-width:120px">'+
+          '<span style="font-size:12px;color:var(--muted);display:block;margin-top:6px">A strength day has no distance, so it needs a weight to count in the week score alongside runs.</span></label>'
+        : '')+
+    '</div></div>'+
+
+    '</div><div>'+
+
+    '<div class="sect"><div class="sect-h"><span class="sect-n">4</span><div style="flex:1"><h3>How their answers change it</h3>'+
+      '<div class="sh">This algorithm belongs to this protocol</div></div></div><div class="sect-b">'+
+      '<span class="lbl">Weighting of the three answers</span>'+
+      ['wDuring:Pain during','wAfter:Pain next morning','wBaseline:Symptoms settled'].map(function(r){
+        const k = r.split(':')[0];
+        return '<div class="setrow"><div style="flex:1"><div class="st">'+r.split(':')[1]+'</div></div>'+
+          '<input type="number" step="0.05" min="0" max="1" id="pe-'+k+'" value="'+A[k]+'" style="width:78px;padding:6px 8px;border:1px solid var(--line);border-radius:7px;text-align:right;font-weight:600"></div>';
+      }).join('')+
+      '<span class="lbl" style="margin-top:14px">Thresholds</span>'+
+      ['painStep:Cost of one pain point','greenAt:Progress at or above','yellowAt:Hold at or above','deload:Reduce by','dwell:Green weeks per ladder step','flagPainDuring:Red flag \u2014 pain during','flagPainAfter:Red flag \u2014 next morning'].map(function(r){
+        const k = r.split(':')[0];
+        const st = (k==='dwell'||k==='flagPainDuring'||k==='flagPainAfter') ? '1' : '0.005';
+        return '<div class="setrow"><div style="flex:1"><div class="st">'+r.split(':')[1]+'</div></div>'+
+          '<input type="number" step="'+st+'" id="pe-'+k+'" value="'+A[k]+'" style="width:78px;padding:6px 8px;border:1px solid var(--line);border-radius:7px;text-align:right;font-weight:600"></div>';
+      }).join('')+
+      '<div id="pe-plain" style="margin-top:16px">'+
+        '<ul style="margin:0;padding-left:19px;font-size:12.5px;line-height:1.7;color:var(--ink-2)">'+plainRules(A)+'</ul></div>'+
+      '<div style="margin-top:16px">'+matrixPair(A)+'</div>'+
+    '</div></div>'+
+
+    '<div class="sect"><div class="sect-h"><span class="sect-n">5</span><div style="flex:1"><h3>What this produces</h3>'+
+      '<div class="sh">A 30 km goal, every week graded green</div></div></div><div class="sect-b">'+
+      '<table><thead><tr><th>Week</th><th>Volume</th>'+(preview.lad?'<th>'+preview.lad.name+'</th>':'')+'</tr></thead><tbody>'+
+      preview.rows.map(function(r){
+        return '<tr><td class="mono">'+r.w+'</td><td class="mono">'+r.pct+'% of goal</td>'+
+          (preview.lad?'<td style="font-size:12px">step '+(r.lvl+1)+' \u00b7 '+preview.lad.rungs[r.lvl]+'</td>':'')+'</tr>';
+      }).join('')+'</tbody></table>'+
+      '<div class="note" style="margin-top:12px">Reaches goal volume after <b>'+
+        (D.inc>0 ? Math.ceil(Math.log(1/(1-D.red))/Math.log(1+D.inc)) : '\u221e')+' green weeks</b> of the '+D.weeks+' available. '+
+        'Real programmes hold and deload along the way, so this is the fastest case.</div>'+
+    '</div></div>'+
+
+    '</div></div>';
+
+  /* ---- bindings ---- */
+  const num = function(id, f){ const el=$('#'+id); if(el) el.oninput = f; };
+  const txt = function(id, f){ const el=$('#'+id); if(el) el.onchange = f; };
+
+  txt('pe-name',   function(e){ D.name = e.target.value; });
+  txt('pe-region', function(e){ D.region = e.target.value; });
+  txt('pe-note',   function(e){ D.note = e.target.value; });
+  txt('pe-weeks',  function(e){ D.weeks = Math.max(2, Math.min(26, +e.target.value||2)); render(); });
+  txt('pe-red',    function(e){ D.red = Math.min(0.9, Math.max(0, (+e.target.value||0)/100)); render(); });
+  txt('pe-inc',    function(e){ D.inc = Math.min(0.5, Math.max(0, (+e.target.value||0)/100)); render(); });
+  txt('pe-ladderload', function(e){ A.ladderLoad = Math.max(0, +e.target.value||0); render(); });
+
+  ['wDuring','wAfter','wBaseline','painStep','greenAt','yellowAt','deload','dwell','flagPainDuring','flagPainAfter']
+    .forEach(function(k){
+      num('pe-'+k, function(e){
+        A[k] = +e.target.value || 0;
+        $('#pe-plain').innerHTML = '<ul style="margin:0;padding-left:19px;font-size:12.5px;line-height:1.7;color:var(--ink-2)">'+plainRules(A)+'</ul>';
+        const mp = $('#adminBody .sect-b .mxwrap');
+        if(mp) mp.parentElement.parentElement.innerHTML = matrixPair(A);
+      });
+    });
+
+  $$('[data-sname]').forEach(function(el){ el.onchange = function(){ D.streams[+el.dataset.sname].name = el.value; }; });
+  $$('[data-srungs]').forEach(function(el){ el.onchange = function(){
+    D.streams[+el.dataset.srungs].rungs = el.value.split('\n').map(function(x){return x.trim();}).filter(Boolean); render(); }; });
+  $$('[data-sday]').forEach(function(el){ el.onclick = function(){
+    const parts = el.dataset.sday.split('-'), st = D.streams[+parts[0]], di = +parts[1];
+    st.days = st.days || [];
+    const at = st.days.indexOf(di);
+    if(at >= 0) st.days.splice(at,1); else st.days.push(di);
+    st.days.sort(); render(); }; });
+  $$('[data-sdel]').forEach(function(el){ el.onclick = function(){ D.streams.splice(+el.dataset.sdel,1); render(); }; });
+
+  $('#pe-addladder').onclick = function(){
+    D.streams.push({ key:'lad'+(D.streams.length+1), type:'ladder', name:'New ladder', days:[1,4],
+                     rungs:['First step','Second step','Third step'] });
+    render();
   };
 
-  const del = $('#pf-del');
+  $('#pe-back').onclick = $('#pe-cancel').onclick = function(){ STATE.protoEdit=null; STATE.protoDraft=null; render(); };
+
+  $('#pe-save').onclick = function(){
+    D.name = ($('#pe-name').value||'').trim();
+    D.region = ($('#pe-region').value||'').trim();
+    D.note = ($('#pe-note').value||'').trim();
+    if(!D.name){ toast('Give the protocol a name'); $('#pe-name').focus(); return; }
+    if(!D.streams.length){ toast('A protocol needs at least one stream'); return; }
+    const payload = { name:D.name, region:D.region, note:D.note || 'No guidance set.',
+                      red:D.red, inc:D.inc, weeks:D.weeks,
+                      algo:{ wDuring:A.wDuring, wAfter:A.wAfter, wBaseline:A.wBaseline, painStep:A.painStep,
+                             greenAt:A.greenAt, yellowAt:A.yellowAt, deload:A.deload, dwell:A.dwell,
+                             ladderLoad:A.ladderLoad, flagPainDuring:A.flagPainDuring, flagPainAfter:A.flagPainAfter },
+                      streams:D.streams };
+    if(isNew){ PROTOCOLS.push(Object.assign({id:'x'+(PROTOCOLS.length+1), uses:0}, payload)); toast('Protocol created \u2014 audit logged'); }
+    else { Object.assign(src, payload); toast('Protocol saved \u2014 every patient on it is graded the new way from next week'); }
+    STATE.protoEdit=null; STATE.protoDraft=null; render();
+  };
+
+  const del = $('#pe-del');
   if(del) del.onclick = function(){
-    if(src.uses > 0){ toast('In use by '+src.uses+' programmes — cannot delete'); return; }
-    PROTOCOLS.splice(PROTOCOLS.indexOf(src), 1);
-    closeModal(); toast('Protocol deleted — audit logged'); render();
+    if(src.uses > 0){ toast('In use by '+src.uses+' programmes \u2014 cannot delete'); return; }
+    PROTOCOLS.splice(PROTOCOLS.indexOf(src),1);
+    STATE.protoEdit=null; STATE.protoDraft=null; toast('Protocol deleted \u2014 audit logged'); render();
   };
-
-  $('#scrim').classList.add('on');
-  $('#pf-name').focus();
 }
 
 function adAlgorithm(){
-  const rows = [
-    ['wDuring',  'Pain during the run',        'How much the during-run answer counts toward the score.'],
-    ['wAfter',   'Pain the next morning',      'How much the next-morning answer counts.'],
-    ['wBaseline','Symptoms back to baseline',  'How much the yes/no settling answer counts.'],
-    ['painStep', 'Cost of one point of pain',  'Each point on the 0-10 scale removes this much from a pain answer. Higher is stricter.'],
-    ['greenAt',  'Progress threshold',         'A week scoring at or above this increases the volume.'],
-    ['yellowAt', 'Hold threshold',             'A week scoring at or above this keeps the volume the same.'],
-    ['deload',   'Deload amount',              'How much volume comes off when a week falls below the hold threshold.']
-  ];
   const fixes = [
-    ['blankIsNotNo','An unlogged run is excluded, not scored as \u201cNo\u201d',
-     'A missing answer is missing data. Without this, a single unlogged run can quietly force a hold week.'],
-    ['minRunsToScore','Require a minimum number of logged runs before grading a week',
-     'One logged run out of three should not decide the next week for the patient.'],
+    ['blankIsNotNo','An unlogged session is excluded, not scored as \u201cNo\u201d',
+     'A missing answer is missing data. Without this, a single unlogged session can quietly force a hold week.'],
+    ['minRunsToScore','Require a minimum number of logged sessions before grading a week',
+     'One logged session out of three should not decide the next week for the patient.'],
     ['capAtGoal','Never prescribe beyond the agreed goal volume',
      'Hold at 100% of the goal and flag the patient as ready for discharge rather than progressing past it.'],
     ['safetyStop','Hard red flags override an otherwise-green week',
-     'A single severe run stops progression and alerts the clinician, however well the rest of the week scored.'],
+     'A single severe session stops progression and alerts the clinician, however well the rest of the week scored.'],
     ['maxWeeklyStepKm','Cap the absolute size of one weekly jump',
      'A 15% increase on 60 km is 9 km in one week. A percentage rule needs an absolute ceiling.']
   ];
-
-  /* ---- what the current numbers actually mean, worked out live ---- */
-  const wTotal   = CFG.wDuring + CFG.wAfter + CFG.wBaseline;
-  const evenPain = Math.abs(CFG.wDuring - CFG.wAfter) < 1e-9 && CFG.wDuring > 0 && CFG.painStep > 0;
-  const combinedFor = function(th){ return (2 - (th - CFG.wBaseline)/CFG.wDuring) / CFG.painStep; };
-  const gMax = evenPain ? Math.floor(combinedFor(CFG.greenAt)  + 1e-9) : null;
-  const hMax = evenPain ? Math.floor(combinedFor(CFG.yellowAt) + 1e-9) : null;
-  const bestUnsettled = CFG.wDuring + CFG.wAfter + CFG.wBaseline * CFG.baselineNoValue;
-  const unsettledVerdict = bestUnsettled >= CFG.greenAt  ? 'can still progress'
-                         : bestUnsettled >= CFG.yellowAt ? 'can at best hold \u2014 it can never progress'
-                         : 'always reduces the volume';
-
-  const plain =
-    (evenPain && gMax >= 0 && gMax <= 20
-      ? '<li>If symptoms settle overnight, a week <b>progresses</b> when pain during plus pain next morning adds up to <b>'+gMax+' or less</b> out of 20.</li>'+
-        '<li>Adding up to <b>'+(hMax > gMax + 1 ? (gMax+1)+'\u2013'+hMax : String(hMax))+'</b> <b>holds</b> the volume. Anything higher <b>reduces</b> it by '+pct(CFG.deload)+'%.</li>'
-      : '<li>The two pain answers are weighted differently, so there is no single combined-pain cut-off. Read the grid below instead.</li>')+
-    '<li>If symptoms have <b>not</b> settled, the best a run can score is <b>'+bestUnsettled.toFixed(2)+'</b>, so it '+unsettledVerdict+'.</li>'+
-    '<li>These thresholds decide <i>how often</i> a week is graded green. The protocol decides <i>how big</i> that green step is.</li>';
-
-  /* ---- every possible pair of answers, coloured by outcome ---- */
-  const matrix = function(settled){
-    let h = '<table class="mx"><tbody>';
-    for(let pd = 0; pd <= 10; pd++){
-      h += '<tr><th>'+pd+'</th>';
-      for(let pa = 0; pa <= 10; pa++){
-        const sc = runScore({pd:pd, pa:pa, b: settled ? 'yes' : 'no'}, CFG);
-        const k  = sc >= CFG.greenAt ? 'g' : (sc >= CFG.yellowAt ? 'a' : 'r');
-        h += '<td class="mx-'+k+'" title="during '+pd+', next morning '+pa+' \u2192 '+sc.toFixed(3)+'"></td>';
-      }
-      h += '</tr>';
-    }
-    h += '</tbody><tfoot><tr><th></th>';
-    for(let pa = 0; pa <= 10; pa++) h += '<th>'+pa+'</th>';
-    h += '</tr></tfoot></table>';
-    return '<div><div style="font-weight:660;font-size:12.5px;margin-bottom:9px">'+
-             (settled ? 'Symptoms settled' : 'Symptoms not settled')+'</div>'+
-           '<div style="font-size:10px;color:var(--muted);font-weight:700;letter-spacing:.06em;text-transform:uppercase;margin-bottom:5px">Pain next morning \u2192</div>'+
-           h + '</div>';
-  };
-
-  /* ---- one run, spelled out ---- */
-  const ex = {pd:3, pa:2, b:'yes'};
-  const exD = CFG.wDuring  * Math.max(0, 1 - CFG.painStep*ex.pd);
-  const exA = CFG.wAfter   * Math.max(0, 1 - CFG.painStep*ex.pa);
-  const exB = CFG.wBaseline * 1;
-  const exS = exD + exA + exB;
-  const exK = exS >= CFG.greenAt ? 'progress' : (exS >= CFG.yellowAt ? 'hold' : 'reduce');
+  const dflt = ['wDuring','wAfter','wBaseline','painStep','greenAt','yellowAt','deload','dwell'];
+  const labels = { wDuring:'Pain during', wAfter:'Next morning', wBaseline:'Settled',
+                   painStep:'Pain step', greenAt:'Progress at', yellowAt:'Hold at',
+                   deload:'Deload', dwell:'Weeks per step' };
 
   $('#adminBody').innerHTML =
-    '<div class="card" style="margin-bottom:16px"><div class="card-h"><h3>What these settings mean right now</h3>'+
-      '<span class="hint">recalculated as you change them</span></div><div class="card-b">'+
-      '<ul style="margin:0 0 16px;padding-left:19px;font-size:13px;line-height:1.75;color:var(--ink-2)">'+plain+'</ul>'+
-      '<div class="calc"><b style="color:var(--ink)">Worked example \u2014 a run with pain '+ex.pd+'/10 during, '+ex.pa+'/10 next morning, symptoms settled</b><br>'+
-        CFG.wDuring.toFixed(2)+' \u00d7 (1 \u2212 '+CFG.painStep+' \u00d7 '+ex.pd+')&nbsp;= '+exD.toFixed(3)+'<br>'+
-        CFG.wAfter.toFixed(2)+' \u00d7 (1 \u2212 '+CFG.painStep+' \u00d7 '+ex.pa+')&nbsp;= '+exA.toFixed(3)+'<br>'+
-        CFG.wBaseline.toFixed(2)+' \u00d7 1 (settled)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;= '+exB.toFixed(3)+'<br>'+
-        '<b style="color:var(--ink)">run score = '+exS.toFixed(3)+' \u2192 '+exK+'</b></div>'+
-    '</div></div>'+
-
-    '<div class="grid g2" style="align-items:start">'+
-      '<div class="card"><div class="card-h"><h3>Every combination of answers</h3>'+
-        '<span class="hint">what one run would do to next week</span></div><div class="card-b">'+
-        '<div style="display:flex;gap:10px"><div style="writing-mode:vertical-rl;transform:rotate(180deg);font-size:10px;color:var(--muted);font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding-top:22px">Pain during \u2193</div>'+
-        '<div class="mxwrap">'+ matrix(true) + matrix(false) +'</div></div>'+
-        '<div class="mxkey"><span><i class="mx-g"></i>Progress</span><span><i class="mx-a"></i>Hold</span><span><i class="mx-r"></i>Reduce</span></div>'+
-        '<div class="note" style="margin-top:14px">Each square is one run. A week is graded on the volume-weighted average of its runs, so a week made up of runs like these lands in the same colour. Move a threshold on the right and the boundary moves with it.</div>'+
+    '<div class="grid g2" style="align-items:start;margin-bottom:16px">'+
+      '<div class="card"><div class="card-h"><h3>Where each setting lives</h3></div><div class="card-b">'+
+        '<div style="display:flex;gap:12px;margin-bottom:14px">'+
+          '<div style="flex:1;border:1px solid var(--line);border-radius:11px;padding:13px">'+
+            '<div style="font-weight:680;font-size:13px;margin-bottom:5px">The protocol owns</div>'+
+            '<div style="font-size:12.5px;color:var(--ink-2);line-height:1.65">How sensitive the grading is: the weighting of the three answers, the progress and hold thresholds, the deload size, how many green weeks earn a ladder step, and where a red flag sits.</div>'+
+            '<div style="font-size:12px;color:var(--muted);margin-top:8px">Different injuries need different sensitivity, so this is set per protocol.</div></div>'+
+          '<div style="flex:1;border:1px solid var(--line);border-radius:11px;padding:13px;background:var(--surface-2)">'+
+            '<div style="font-weight:680;font-size:13px;margin-bottom:5px">The clinic owns</div>'+
+            '<div style="font-size:12.5px;color:var(--ink-2);line-height:1.65">The safety rules below. They apply to every protocol and cannot be switched off by whoever writes one.</div>'+
+            '<div style="font-size:12px;color:var(--muted);margin-top:8px">This is the line between clinical judgement and governance.</div></div>'+
+        '</div>'+
+        '<div class="note">The numbers on this page are the <b>starting point for new protocols</b> and the fallback for any value a protocol has not set. All four protocols below set their own, so editing these will not change a patient already on one.</div>'+
       '</div></div>'+
 
-      '<div>'+
-        '<div class="card" style="margin-bottom:16px"><div class="card-h"><h3>Scoring model</h3>'+
-          '<span class="hint">applies clinic-wide</span></div><div class="card-b">'+
-          rows.map(function(r){
-            return '<div class="setrow"><div style="flex:1"><div class="st">'+r[1]+'</div><div class="sd">'+r[2]+'</div></div>'+
-              '<input type="number" step="0.005" value="'+CFG[r[0]]+'" data-cfg="'+r[0]+'" style="width:78px;padding:6px 8px;border:1px solid var(--line);border-radius:7px;text-align:right;font-weight:600"></div>';
-          }).join('')+
-          '<div class="note'+(Math.abs(wTotal-1) > 0.001 ? ' warn' : '')+'" style="margin-top:12px">'+
-            'The three weights total <b>'+wTotal.toFixed(2)+'</b>'+
-            (Math.abs(wTotal-1) > 0.001 ? ' \u2014 they should total 1.00, or a perfect run will not score 1.00.' : '. A perfect run scores 1.00.')+'</div>'+
-          '<div class="note" style="margin-top:9px"><b>Change control.</b> Editing these values re-grades only future weeks. Historical decisions keep the thresholds that were in force when they were made, and the change is written to the audit log.</div>'+
-        '</div></div>'+
+      '<div class="card"><div class="card-h"><h3>What each protocol chose</h3>'+
+        '<span class="hint">bold means it differs from the default</span></div>'+
+        '<div style="overflow-x:auto"><table><thead><tr><th>Setting</th><th>Default</th>'+
+        PROTOCOLS.map(function(x){ return '<th>'+x.name.split(' \u2014 ')[0].split(' ').slice(0,2).join(' ')+'</th>'; }).join('')+
+        '</tr></thead><tbody>'+
+        dflt.map(function(k){
+          return '<tr><td style="font-size:12.5px">'+labels[k]+'</td>'+
+            '<td class="mono" style="color:var(--muted)">'+CFG[k]+'</td>'+
+            PROTOCOLS.map(function(x){
+              const v = (x.algo && x.algo[k] !== undefined) ? x.algo[k] : CFG[k];
+              const diff = v !== CFG[k];
+              return '<td class="mono">'+(diff ? '<b style="color:var(--accent)">'+v+'</b>' : '<span style="color:var(--muted)">'+v+'</span>')+'</td>';
+            }).join('')+'</tr>';
+        }).join('')+'</tbody></table></div></div>'+
+    '</div>'+
 
-        '<div class="card"><div class="card-h"><h3>Safety and data rules</h3>'+
-          '<span class="hint">each one can be switched off</span></div><div class="card-b">'+
-          fixes.map(function(f){
-            const on = !!CFG[f[0]];
-            return '<div class="setrow"><div style="flex:1"><div class="st">'+f[1]+'</div><div class="sd">'+f[2]+'</div></div>'+
-              '<div class="toggle '+(on?'on':'')+'" data-tog="'+f[0]+'"><i></i></div></div>';
-          }).join('')+
-        '</div></div>'+
-      '</div>'+
+    '<div class="grid g2" style="align-items:start">'+
+      '<div class="card"><div class="card-h"><h3>Clinic defaults</h3>'+
+        '<span class="hint">used when a protocol does not say otherwise</span></div><div class="card-b">'+
+        [['wDuring','Pain during the session'],['wAfter','Pain the next morning'],['wBaseline','Symptoms back to baseline'],
+         ['painStep','Cost of one point of pain'],['greenAt','Progress threshold'],['yellowAt','Hold threshold'],
+         ['deload','Deload amount'],['dwell','Green weeks per ladder step']].map(function(r){
+          return '<div class="setrow"><div style="flex:1"><div class="st">'+r[1]+'</div></div>'+
+            '<input type="number" step="0.005" value="'+CFG[r[0]]+'" data-cfg="'+r[0]+'" style="width:78px;padding:6px 8px;border:1px solid var(--line);border-radius:7px;text-align:right;font-weight:600"></div>';
+        }).join('')+
+        '<div id="ad-plain" style="margin-top:14px"><ul style="margin:0;padding-left:19px;font-size:12.5px;line-height:1.7;color:var(--ink-2)">'+plainRules(CFG)+'</ul></div>'+
+        '<div style="margin-top:16px">'+matrixPair(CFG)+'</div>'+
+      '</div></div>'+
+
+      '<div class="card"><div class="card-h"><h3>Safety rules</h3>'+
+        '<span class="hint">clinic-wide, not overridable by a protocol</span></div><div class="card-b">'+
+        fixes.map(function(f){
+          const on = !!CFG[f[0]];
+          return '<div class="setrow"><div style="flex:1"><div class="st">'+f[1]+'</div><div class="sd">'+f[2]+'</div></div>'+
+            '<div class="toggle '+(on?'on':'')+'" data-tog="'+f[0]+'"><i></i></div></div>';
+        }).join('')+
+        '<div class="note" style="margin-top:12px"><b>Change control.</b> Editing anything on this page re-grades only future weeks. Historical decisions keep the settings that were in force when they were made, and the change is written to the audit log.</div>'+
+      '</div></div>'+
     '</div>';
 
   $$('[data-tog]').forEach(function(el){ el.onclick=function(){ CFG[el.dataset.tog] = !CFG[el.dataset.tog]; toast('Setting changed \u2014 audit logged'); render(); }; });
-  $$('[data-cfg]').forEach(function(el){ el.onchange=function(){ CFG[el.dataset.cfg] = +el.value; toast('Threshold updated \u2014 audit logged'); render(); }; });
+  $$('[data-cfg]').forEach(function(el){ el.onchange=function(){ CFG[el.dataset.cfg] = +el.value; toast('Default updated \u2014 audit logged'); render(); }; });
 }
 
 function adAccounts(){
