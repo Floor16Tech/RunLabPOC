@@ -30,13 +30,25 @@ input,select{font-family:inherit;font-size:inherit;color:inherit}
 .mono{font-variant-numeric:tabular-nums;font-feature-settings:"tnum"}
 
 /* ---------- shell ---------- */
-.switcher{background:#0a0a0a;padding:9px 22px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
-.switcher .swl{font-size:10px;letter-spacing:.15em;text-transform:uppercase;font-weight:700;color:#71717a}
-.switcher select{background:#18181b;border:1px solid #2e2e33;color:#e4e4e7;padding:7px 11px;border-radius:8px;font-size:12.5px;font-weight:600;max-width:420px}
-.seg.dark{background:#18181b;border-color:#2e2e33}
-.seg.dark button{color:#a1a1aa}
-.seg.dark button:hover{color:#fff}
-.seg.dark button.on{background:var(--accent);color:#fff;box-shadow:none}
+#app[hidden],#gate[hidden]{display:none}
+.gate{min-height:100vh;min-height:100dvh;background:#0a0a0a;display:flex;align-items:center;justify-content:center;padding:26px 20px}
+.gatecard{background:#fff;border-radius:20px;width:100%;max-width:470px;padding:34px 30px 26px;box-shadow:0 30px 90px rgba(0,0,0,.55)}
+.gatecard .glogo{height:40px;width:auto;display:block;margin:0 auto}
+.gatecard .gsub{text-align:center;font-size:9.5px;letter-spacing:.22em;text-transform:uppercase;color:var(--muted);font-weight:700;margin-top:7px}
+.gateh{text-align:center;font-size:21px;font-weight:700;letter-spacing:-.025em;margin:22px 0 6px}
+.gatep{text-align:center;font-size:13px;color:var(--muted);line-height:1.55;margin-bottom:22px}
+.roletile{display:flex;align-items:center;gap:14px;width:100%;text-align:left;padding:15px 16px;border:1.5px solid var(--line);border-radius:13px;margin-bottom:10px;background:#fff;transition:.15s}
+.roletile:hover{border-color:var(--accent);background:var(--accent-soft)}
+.roletile .ri{width:38px;height:38px;border-radius:10px;background:var(--ink);display:grid;place-items:center;flex:0 0 38px;color:#fff;transition:.15s}
+.roletile:hover .ri{background:var(--accent)}
+.roletile .rt{display:block;font-weight:680;font-size:14.5px}
+.roletile .rd{display:block;font-size:12px;color:var(--muted);line-height:1.45;margin-top:2px}
+.roletile .rc{color:var(--muted);font-size:19px;flex:0 0 auto}
+.ptile{display:flex;align-items:center;gap:12px;width:100%;text-align:left;padding:12px 14px;border:1.5px solid var(--line);border-radius:12px;margin-bottom:8px;background:#fff;transition:.15s}
+.ptile:hover{border-color:var(--accent);background:var(--accent-soft)}
+.gateback{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:650;color:var(--muted);margin-bottom:14px}
+.gateback:hover{color:var(--accent)}
+.gatefoot{margin-top:22px;padding-top:15px;border-top:1px solid var(--line);font-size:11px;color:var(--muted);line-height:1.6;text-align:center}
 .apphead{background:var(--surface);border-bottom:1px solid var(--line);padding:15px 26px;display:flex;align-items:center;gap:18px;flex-wrap:wrap}
 .applogo{display:flex;align-items:center;gap:13px}
 .applogo .wm{height:30px;width:auto;display:block;flex:0 0 auto}
@@ -228,13 +240,14 @@ tbody tr.click:hover{background:var(--surface-2)}
 @media (max-width:760px){
   /* 16px stops iOS Safari zooming the page when a field takes focus */
   input,select,textarea{font-size:16px}
-  .switcher select{font-size:16px;width:100%;max-width:none}
   .composer input{font-size:16px}
 
   .appmain{padding:16px 14px 46px}
   .apphead{padding:12px max(14px,env(safe-area-inset-left)) 12px max(14px,env(safe-area-inset-left))}
-  .switcher{padding:10px max(14px,env(safe-area-inset-left));gap:9px}
-  .switcher .swl{width:100%}
+  .gate{padding:16px 14px;align-items:flex-start}
+  .gatecard{padding:26px 20px 20px;border-radius:16px}
+  .gateh{font-size:19px}
+  .roletile{padding:14px}
   .appnav{padding:0 max(6px,env(safe-area-inset-left))}
   .appnav button{padding:0 12px;min-height:48px;font-size:13.5px}
   .lbl-full{display:none}
@@ -278,17 +291,9 @@ tbody tr.click:hover{background:var(--surface-2)}
 </style>
 </head>
 <body>
-<div class="switcher">
-  <span class="swl">Proof of concept &mdash; view as</span>
-  <div class="seg dark" id="roleSeg">
-    <button data-view="patient" class="on">Patient</button>
-    <button data-view="clinician">Clinician</button>
-    <button data-view="admin">Administrator</button>
-  </div>
-  <span class="spacer"></span>
-  <span id="switchExtra"></span>
-</div>
+<div class="gate" id="gate"></div>
 
+<div id="app" hidden>
 <header class="apphead" id="appHead"></header>
 <nav class="appnav" id="appNav"></nav>
 
@@ -306,6 +311,7 @@ tbody tr.click:hover{background:var(--surface-2)}
     Built by <a href="https://floor16.com" style="color:var(--accent);text-decoration:none;font-weight:600">Floor 16 Technologies</a>.
   </div>
 </footer>
+</div>
 
 <div class="scrim" id="scrim"><div class="modal" id="modal"></div></div>
 <div class="toast" id="toast"></div>
@@ -514,7 +520,7 @@ function fmtDate(d){ return d.toLocaleDateString('en-CA',{month:'short',day:'num
 function closeModal(){ $('#scrim').classList.remove('on'); }
 function P(id){ return PATIENTS.filter(function(x){return x.id===id;})[0]; }
 
-let STATE = { view:'patient', patient:'p1', ptab:'today', siteWidth:'wide', clinTab:'caseload', chatWith:null, chatPane:'list', clinPatient:null, adminTab:'protocols', draft:null };
+let STATE = { signedIn:false, gateStep:'roles', view:'patient', patient:'p1', ptab:'today', siteWidth:'wide', clinTab:'caseload', chatWith:null, chatPane:'list', clinPatient:null, adminTab:'protocols', draft:null };
 
 /* ==================================================================
    PATIENT WEB APP  -  a link the clinic sends; opens in any browser
@@ -1454,30 +1460,82 @@ const NAVS = {
                          go:function(){ STATE.adminTab=t[0]; }}; }); }
 };
 
-function render(){
-  $$('.view').forEach(function(v){ v.classList.toggle('on', v.id === 'v-'+STATE.view); });
-  $$('#roleSeg button').forEach(function(b){ b.classList.toggle('on', b.dataset.view===STATE.view); });
+const ROLE_ICONS = {
+  patient:   '<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-6 8-6s8 2 8 6"/></svg>',
+  clinician: '<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 5h18M3 12h12M3 19h7"/><circle cx="19" cy="17" r="3"/></svg>',
+  admin:     '<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.1"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>'
+};
 
-  /* the demo-only patient picker */
-  if(STATE.view==='patient'){
-    $('#switchExtra').innerHTML = '<span class="swl" style="margin-right:9px">Programme</span>'+
-      '<select id="demoPatient">'+ PATIENTS.map(function(p){
-        return '<option value="'+p.id+'"'+(p.id===STATE.patient?' selected':'')+'>'+p.name+' — '+p.injury+' — week '+p.cur+' of '+p.weeks+'</option>';
-      }).join('') +'</select>';
-    $('#demoPatient').onchange = function(e){ STATE.patient=e.target.value; STATE.ptab='today'; render(); };
-  } else {
-    $('#switchExtra').innerHTML = '<span class="swl">Maciek Krolikowski &middot; PT #8857</span>';
-  }
+const ROLES = [
+  ['patient',  'Patient',       'Follow your programme, log each run, message your physiotherapist'],
+  ['clinician','Clinician',     'Triage the caseload, adjust programmes, reply to patients'],
+  ['admin',    'Administrator', 'Protocols, staff and patient accounts, algorithm settings']
+];
+
+function renderGate(){
+  const onPatients = STATE.gateStep === 'patients';
+  const head = onPatients
+    ? '<h1 class="gateh">Which patient?</h1><p class="gatep">Each one is at a different point in their programme, so the portal looks different for each.</p>'
+    : '<h1 class="gateh">Return to Run</h1><p class="gatep">Choose how you would like to sign in and preview the portal.</p>';
+
+  const body = onPatients
+    ? '<button class="gateback" id="gateBack">&lsaquo; Back</button>'+
+      PATIENTS.map(function(p){
+        return '<button class="ptile" data-pid="'+p.id+'">'+
+          '<span class="avatar" style="background:'+p.colour+'">'+initials(p.name)+'</span>'+
+          '<span style="flex:1;min-width:0"><span style="display:block;font-weight:660;font-size:13.5px">'+p.name+'</span>'+
+          '<span style="display:block;font-size:11.5px;color:var(--muted)">'+p.injury+'</span></span>'+
+          '<span class="pill pill-n">Week '+p.cur+'</span></button>';
+      }).join('')
+    : ROLES.map(function(r){
+        return '<button class="roletile" data-role="'+r[0]+'">'+
+          '<span class="ri">'+ROLE_ICONS[r[0]]+'</span>'+
+          '<span style="flex:1;min-width:0"><span class="rt">'+r[1]+'</span><span class="rd">'+r[2]+'</span></span>'+
+          '<span class="rc">&rsaquo;</span></button>';
+      }).join('');
+
+  $('#gate').innerHTML =
+    '<div class="gatecard">'+
+      '<img class="glogo" src="'+LOGO+'" alt="The Lab">'+
+      '<div class="gsub">Rehab + Performance</div>'+
+      head + body +
+      '<div class="gatefoot"><b style="color:var(--ink-2)">Proof of concept.</b> No password required and nothing is saved. '+
+      'All patients, programmes and messages are fabricated demonstration data.</div>'+
+    '</div>';
+
+  $$('[data-role]').forEach(function(b){ b.onclick = function(){
+    if(b.dataset.role === 'patient'){ STATE.gateStep = 'patients'; renderGate(); return; }
+    STATE.view = b.dataset.role; STATE.signedIn = true; render();
+  }; });
+  $$('[data-pid]').forEach(function(b){ b.onclick = function(){
+    STATE.patient = b.dataset.pid; STATE.view = 'patient'; STATE.ptab = 'today'; STATE.signedIn = true; render();
+  }; });
+  const gb = $('#gateBack'); if(gb) gb.onclick = function(){ STATE.gateStep = 'roles'; renderGate(); };
+}
+
+function signOut(){
+  STATE.signedIn = false; STATE.gateStep = 'roles';
+  STATE.ptab = 'today'; STATE.clinTab = 'caseload'; STATE.clinPatient = null;
+  STATE.adminTab = 'protocols'; STATE.chatPane = 'list';
+  render();
+}
+
+function render(){
+  if(!STATE.signedIn){ $('#gate').hidden = false; $('#app').hidden = true; renderGate(); return; }
+  $('#gate').hidden = true; $('#app').hidden = false;
+  $$('.view').forEach(function(v){ v.classList.toggle('on', v.id === 'v-'+STATE.view); });
 
   /* one app header for every role */
   const p = P(STATE.patient);
   const right = STATE.view==='patient'
     ? '<span class="pill pill-n">Week '+p.cur+' of '+p.weeks+'</span>'+
       '<div style="display:flex;align-items:center;gap:9px"><div class="avatar" style="background:'+p.colour+'">'+initials(p.name)+'</div>'+
-      '<span style="font-weight:640;font-size:13px">'+p.name+'</span></div>'
+      '<span style="font-weight:640;font-size:13px">'+p.name+'</span></div>'+
+      '<button class="btn btn-sm" id="signOut">Sign out</button>'
     : '<span style="font-size:12px;color:var(--muted)">18 Aug 2026</span>'+
       '<div style="display:flex;align-items:center;gap:9px"><div class="avatar" style="background:var(--ink)">MK</div>'+
-      '<span style="font-weight:640;font-size:13px">Maciek Krolikowski</span></div>';
+      '<span style="font-weight:640;font-size:13px">Maciek Krolikowski</span></div>'+
+      '<button class="btn btn-sm" id="signOut">Sign out</button>';
 
   $('#appHead').innerHTML =
     '<div class="applogo"><img class="wm" src="'+LOGO+'" alt="The Lab">'+
@@ -1493,13 +1551,13 @@ function render(){
       (it.badge ? '<span class="badge">'+it.badge+'</span>' : '')+'</button>';
   }).join('');
   $$('[data-nav]').forEach(function(b){ b.onclick=function(){ items[+b.dataset.nav].go(); render(); }; });
+  const so = $('#signOut'); if(so) so.onclick = signOut;
 
   if(STATE.view==='patient')   renderPatient();
   if(STATE.view==='clinician') renderClinician();
   if(STATE.view==='admin')     renderAdmin();
 }
 
-$$('#roleSeg button').forEach(function(b){ b.onclick=function(){ STATE.view=b.dataset.view; render(); }; });
 render();
 </script>
 </body>
