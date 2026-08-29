@@ -887,7 +887,7 @@ function fmtDate(d){ return d.toLocaleDateString('en-CA',{month:'short',day:'num
 function closeModal(){ $('#scrim').classList.remove('on'); }
 function P(id){ return PATIENTS.filter(function(x){return x.id===id;})[0]; }
 
-let STATE = { signedIn:false, gateStep:'roles', view:'patient', patient:'p1', ptab:'today', siteWidth:'wide', clinTab:'caseload', chatWith:null, chatPane:'list', protoEdit:null, clinPatient:null, adminTab:'protocols', draft:null };
+let STATE = { signedIn:false, gateStep:'roles', view:'patient', patient:'p1', ptab:'today', siteWidth:'wide', clinTab:'caseload', chatWith:null, chatPane:'list', protoEdit:null, clinNew:false, newProg:null, clinPatient:null, adminTab:'protocols', draft:null };
 
 /* ==================================================================
    PATIENT WEB APP  -  a link the clinic sends; opens in any browser
@@ -1298,6 +1298,7 @@ function attention(p, prog){
 }
 
 function renderClinician(){
+  if(STATE.clinNew) return newProgramme();
   if(STATE.clinTab === 'messages') return renderMessages();
   if(STATE.clinPatient) return renderPatientDetail();
 
@@ -1355,7 +1356,7 @@ function renderClinician(){
       }).join('') +'</tbody></table></div>';
 
   $$('[data-open]').forEach(function(el){ el.onclick=function(e){ e.stopPropagation(); STATE.clinPatient=el.dataset.open; render(); }; });
-  $('#btnNew').onclick = function(e){ e.stopPropagation(); newProgrammeModal(); };
+  $('#btnNew').onclick = function(e){ e.stopPropagation(); STATE.clinNew=true; STATE.newProg=null; render(); };
 }
 
 function statTile(k,v,d,col){
@@ -1480,15 +1481,59 @@ function builderCard(p, prog){
         '<input type="number" min="0" step="0.5" value="'+p.goal[i]+'" data-goal="'+i+'" style="width:100%;padding:7px 2px;text-align:center;border:1px solid var(--line);border-radius:7px;font-weight:600"></div>';
     }).join('') +'</div>'+
     '<div class="kv" style="margin-bottom:12px"><span class="k">Goal weekly volume</span><span class="v">'+prog.goalTotal+' km over '+prog.runDays.length+' days</span></div>'+
-    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'+
-      '<label class="field" style="margin:0"><span class="lbl">Starting reduction</span><input type="number" min="0" max="90" step="5" value="'+pct(p.red)+'" data-set="red"></label>'+
-      '<label class="field" style="margin:0"><span class="lbl">Weekly increase</span><input type="number" min="0" max="50" step="1" value="'+pct(p.inc)+'" data-set="inc"></label>'+
+    rampSliders(p.red, p.inc, prog.goalTotal, prog.unit, 'bd')+
+    '<div id="bd-preview" style="margin-top:14px">'+rampPreview(prog.goalTotal, p.red, p.inc, p.weeks, prog.unit)+'</div>'+
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px">'+
       '<label class="field" style="margin:0"><span class="lbl">Programme weeks</span><input type="number" min="2" max="26" step="1" value="'+p.weeks+'" data-set="weeks"></label>'+
       '<label class="field" style="margin:0"><span class="lbl">Currently in week</span><input type="number" min="1" max="'+p.weeks+'" step="1" value="'+p.cur+'" data-set="cur"></label>'+
     '</div>'+
-    '<div class="note" style="margin-top:6px">Week 1 = '+fmtVol(prog.goalTotal, prog.unit)+' × (1 − '+pct(p.red)+'%) = <b>'+fmtVol(prog.weeks[0].vol, prog.unit)+'</b>. '+
-    'At '+pct(p.inc)+'% per green week, the goal is reached in <b>'+weeksToGoal(p)+' consecutive green weeks</b>.</div>'+
     '</div></div>';
+}
+
+/* what a baseline and a steepness actually produce, in real numbers */
+function rampRows(goalTotal, red, inc, weeks, unit, n){
+  const rows = []; let vol = goalTotal*(1-red);
+  for(let w=1; w<=Math.min(weeks, n||8); w++){
+    rows.push({w:w, vol:vol, pct:goalTotal ? Math.round(vol/goalTotal*100) : 0});
+    vol = Math.min(goalTotal, vol*(1+inc));
+  }
+  return rows;
+}
+function weeksToGoalOf2(red, inc){
+  return inc > 0 ? Math.ceil(Math.log(1/(1-red))/Math.log(1+inc)) : null;
+}
+function rampPreview(goalTotal, red, inc, weeks, unit){
+  const rows = rampRows(goalTotal, red, inc, weeks, unit, 8);
+  const n = weeksToGoalOf2(red, inc);
+  return '<div class="bar-wrap" style="height:132px">'+ rows.map(function(r){
+      return '<div class="bar" title="Week '+r.w+'"><div class="amt">'+fmtVol(r.vol, unit).split(' ')[0]+'</div>'+
+        '<div class="fill" style="height:'+Math.round(r.pct*0.92)+'%;background:var(--accent)"></div>'+
+        '<div class="cap">'+r.w+'</div></div>';
+    }).join('') +'</div>'+
+    '<div class="note" style="margin-top:12px">Week 1 starts at <b>'+fmtVol(rows[0].vol, unit)+'</b>, '+
+      rows[0].pct+'% of the '+fmtVol(goalTotal, unit)+' goal. '+
+      (n === null ? 'With no weekly increase it never reaches the goal on its own.'
+                  : 'If every week is graded green it reaches the goal after <b>'+n+' week'+(n===1?'':'s')+'</b>'+
+                    (n > weeks ? ', which is longer than the '+weeks+' weeks set.' : ' of the '+weeks+' set.'))+
+      ' Real programmes hold and deload, so this is the fastest case.</div>';
+}
+
+/* the two decisions a physiotherapist makes in the room */
+function rampSliders(red, inc, goalTotal, unit, idPrefix){
+  const start = goalTotal*(1-red);
+  return '<span class="lbl">Where they start</span>'+
+    '<div class="slrow" style="margin-bottom:6px">'+
+      '<input type="range" class="slider" id="'+idPrefix+'-red" min="10" max="90" step="5" value="'+Math.round((1-red)*100)+'">'+
+      '<span class="slval" id="'+idPrefix+'-red-out">'+fmtVol(start, unit)+'</span></div>'+
+    '<div style="font-size:11.5px;color:var(--muted);margin-bottom:16px" id="'+idPrefix+'-red-sub">'+
+      Math.round((1-red)*100)+'% of their goal</div>'+
+
+    '<span class="lbl">How steep the ramp is</span>'+
+    '<div class="slrow" style="margin-bottom:6px">'+
+      '<input type="range" class="slider" id="'+idPrefix+'-inc" min="0" max="25" step="1" value="'+Math.round(inc*100)+'">'+
+      '<span class="slval" id="'+idPrefix+'-inc-out">+'+Math.round(inc*100)+'%</span></div>'+
+    '<div style="font-size:11.5px;color:var(--muted)" id="'+idPrefix+'-inc-sub">per green week</div>'+
+    '<div id="'+idPrefix+'-warn">'+incWarn(inc)+'</div>';
 }
 
 function weeksToGoal(p){
@@ -1552,6 +1597,24 @@ function mathsCard(p, prog){
 }
 
 function bindBuilder(p){
+  const prog0 = computeProgram(p, CFG);
+  const gt = prog0.goalTotal, un = prog0.unit;
+  const rs = $('#bd-red'), is = $('#bd-inc');
+  const repaint = function(red, inc){
+    $('#bd-red-out').textContent = fmtVol(gt*(1-red), un);
+    $('#bd-red-sub').textContent = Math.round((1-red)*100)+'% of their goal';
+    $('#bd-inc-out').textContent = '+'+Math.round(inc*100)+'%';
+    $('#bd-warn').innerHTML = incWarn(inc);
+    $('#bd-preview').innerHTML = rampPreview(gt, red, inc, p.weeks, un);
+  };
+  if(rs){
+    rs.oninput  = function(){ repaint(1 - rs.value/100, +is.value/100); };
+    rs.onchange = function(){ p.red = 1 - rs.value/100; render(); };
+  }
+  if(is){
+    is.oninput  = function(){ repaint(1 - rs.value/100, +is.value/100); };
+    is.onchange = function(){ p.inc = +is.value/100; render(); };
+  }
   $$('[data-goal]').forEach(function(el){
     el.onchange = function(){ p.goal[+el.dataset.goal] = Math.max(0, +el.value||0); render(); };
   });
@@ -1589,6 +1652,164 @@ function overrideModal(p, w){
     closeModal(); toast('Week '+w+' overridden — logged to audit trail'); render();
   };
   $('#scrim').classList.add('on');
+}
+
+/* find the composed protocol for this pairing, or make it */
+function ensureProtocol(inj, act, unit){
+  const match = PROTOCOLS.filter(function(x){
+    return x.from && x.from.injury===inj.key && x.from.activity===act.key &&
+           x.streams[0] && x.streams[0].unit===unit;
+  })[0];
+  if(match) return match;
+  const proto = composeProtocol(inj, act, unit);
+  let id = proto.id, n = 2;
+  while(PROTOCOLS.filter(function(x){ return x.id===id; }).length){ id = proto.id+'-'+n; n++; }
+  proto.id = id; PROTOCOLS.push(proto);
+  return proto;
+}
+
+const NEWCOLOURS = ['#0a0a0a','#3f3f46','#E31B23','#52525b','#71717a','#27272a'];
+
+function newProgramme(){
+  const N = STATE.newProg = STATE.newProg || {step:1, name:'', injury:null, activity:null, unit:null,
+                                              goal:[0,0,0,0,0,0,0], red:null, inc:null, weeks:null};
+  const inj = N.injury ? injuryByKey(N.injury) : null;
+  const act = N.activity ? activityByKey(N.activity) : null;
+  const unit = N.unit || (act ? act.units[0] : 'km');
+  const goalTotal = sum(N.goal);
+
+  let body = '';
+  if(N.step === 1){
+    body =
+      '<div class="sect"><div class="sect-h"><span class="sect-n">1</span><div style="flex:1"><h3>Who</h3></div></div>'+
+      '<div class="sect-b"><div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">'+
+        '<label class="field" style="margin:0"><span class="lbl">Patient name</span>'+
+          '<input id="np-name" value="'+String(N.name).replace(/"/g,'&quot;')+'" placeholder="Full name"></label>'+
+        '<label class="field" style="margin:0"><span class="lbl">Email for the portal link</span>'+
+          '<input id="np-email" placeholder="name@example.com"></label>'+
+      '</div></div></div>'+
+
+      '<div class="sect"><div class="sect-h"><span class="sect-n">2</span><div style="flex:1"><h3>What are we treating?</h3>'+
+        '<div class="sh">Sets how cautiously RAMP reads their answers</div></div></div><div class="sect-b">'+
+        '<div class="pickgrid">'+ INJURIES.map(function(x){
+          return '<button class="pick '+(N.injury===x.key?'on':'')+'" data-ninj="'+x.key+'">'+
+            '<span class="pn">'+x.name+'</span><span class="pr">'+x.region+'</span></button>';
+        }).join('') +'</div></div></div>'+
+
+      (inj ? '<div class="sect"><div class="sect-h"><span class="sect-n">3</span><div style="flex:1"><h3>Getting back to what?</h3>'+
+        '<div class="sh">Sets the units and the ceiling on the pace</div></div></div><div class="sect-b">'+
+        '<div class="pickgrid">'+ ACTIVITIES.map(function(a){
+          const typical = inj.typical.indexOf(a.key) >= 0;
+          return '<button class="pick '+(N.activity===a.key?'on':'')+'" data-nact="'+a.key+'">'+
+            '<span class="pn">'+a.name+'</span><span class="pr">'+a.detail+'</span>'+
+            (typical ? '<span class="ptag">Common pairing</span>' : '')+'</button>';
+        }).join('') +'</div></div></div>' : '');
+  }
+
+  if(N.step === 2 && inj && act){
+    body =
+      '<div class="grid dgrid" style="align-items:start"><div>'+
+      '<div class="sect"><div class="sect-h"><span class="sect-n">4</span><div style="flex:1"><h3>Their goal</h3>'+
+        '<div class="sh">What they are aiming to get back to, agreed with them</div></div></div><div class="sect-b">'+
+        (act.units.length > 1 ? '<label class="field"><span class="lbl">Measured in</span><select id="np-unit">'+
+          act.units.map(function(u){ return '<option value="'+u+'"'+(u===unit?' selected':'')+'>'+unitLabel(u)+'</option>'; }).join('')+
+          '</select></label>' : '')+
+        '<span class="lbl">Goal per day</span>'+
+        '<div style="display:flex;gap:5px;margin-bottom:12px">'+ DAYS.map(function(d,i){
+          return '<div style="flex:1;text-align:center"><div style="font-size:10px;color:var(--muted);font-weight:700;margin-bottom:3px">'+d+'</div>'+
+            '<input type="number" min="0" step="0.5" value="'+N.goal[i]+'" data-ngoal="'+i+'" style="width:100%;padding:8px 2px;text-align:center;border:1px solid var(--line);border-radius:7px;font-weight:600"></div>';
+        }).join('') +'</div>'+
+        '<div class="kv"><span class="k">Goal each week</span><span class="v">'+fmtVol(goalTotal, unit)+
+          ' over '+N.goal.filter(function(g){return g>0;}).length+' days</span></div>'+
+        '<label class="field" style="margin-top:12px;margin-bottom:0"><span class="lbl">Programme length (weeks)</span>'+
+          '<input type="number" id="np-weeks" min="2" max="26" value="'+(N.weeks || Math.max(inj.weeks, act.weeks))+'" style="max-width:120px"></label>'+
+      '</div></div></div><div>'+
+
+      '<div class="sect"><div class="sect-h"><span class="sect-n">5</span><div style="flex:1"><h3>Their ramp</h3>'+
+        '<div class="sh">The only two numbers you set. RAMP handles the rest.</div></div></div><div class="sect-b">'+
+        (goalTotal > 0
+          ? rampSliders(N.red, N.inc, goalTotal, unit, 'np')+
+            '<div id="np-preview" style="margin-top:16px">'+rampPreview(goalTotal, N.red, N.inc, N.weeks || 12, unit)+'</div>'+
+            '<div class="note" style="margin-top:14px">From here on RAMP only does three things: after each week it reads the pain '+
+            'during and the pain the next morning, then <b>progresses</b>, <b>holds</b> or <b>falls back</b>. '+
+            'The sensitivity comes from '+inj.name.toLowerCase()+', which the clinic set once.</div>'
+          : '<div class="note">Set a goal on the left and the ramp appears here.</div>')+
+      '</div></div>'+
+
+      '</div></div>';
+  }
+
+  const canNext = N.step === 1 ? (N.name && inj && act) : (goalTotal > 0);
+  $('#clinRoot').innerHTML =
+    '<div style="display:flex;align-items:center;gap:12px;margin-bottom:18px;flex-wrap:wrap">'+
+      '<button class="btn btn-sm" id="np-back">\u2039 '+(N.step===1?'Caseload':'Back')+'</button>'+
+      '<div style="flex:1 1 200px;min-width:0"><h2 style="font-size:19px">Start a programme</h2>'+
+      '<div style="font-size:12.5px;color:var(--muted)">'+
+        (inj && act ? inj.name+' \u2192 '+act.name : 'About two minutes, with the patient in front of you')+'</div></div>'+
+      '<button class="btn btn-sm btn-p" id="np-next"'+(canNext?'':' style="opacity:.45"')+'>'+
+        (N.step===1?'Set their ramp':'Create and send the invite')+'</button>'+
+    '</div>'+
+    '<div class="steps">'+
+      '<div class="stepchip '+(N.step===1?'on':'done')+'"><i>'+(N.step===1?'1':'\u2713')+'</i>Who and what</div>'+
+      '<span style="color:var(--line)">\u203a</span>'+
+      '<div class="stepchip '+(N.step===2?'on':'')+'"><i>2</i>Goal and ramp</div>'+
+    '</div>'+ body;
+
+  const nm = $('#np-name'); if(nm) nm.onchange = function(){ N.name = nm.value; };
+  $$('[data-ninj]').forEach(function(b){ b.onclick=function(){
+    N.injury=b.dataset.ninj; const i2=injuryByKey(N.injury);
+    if(N.red===null) N.red=i2.defRed; N.weeks=null; render(); }; });
+  $$('[data-nact]').forEach(function(b){ b.onclick=function(){
+    N.activity=b.dataset.nact; N.unit=null;
+    const i2=injuryByKey(N.injury), a2=activityByKey(N.activity);
+    N.red = Math.max(i2.defRed, a2.defRed);
+    N.inc = Math.min(i2.maxInc, a2.maxInc);
+    N.weeks = Math.max(i2.weeks, a2.weeks);
+    render(); }; });
+  const us = $('#np-unit'); if(us) us.onchange = function(){ N.unit = us.value; render(); };
+  $$('[data-ngoal]').forEach(function(el){ el.onchange = function(){
+    N.goal[+el.dataset.ngoal] = Math.max(0, +el.value||0); render(); }; });
+  const wk = $('#np-weeks'); if(wk) wk.onchange = function(){ N.weeks = Math.max(2, Math.min(26, +wk.value||12)); render(); };
+
+  const rs = $('#np-red'), is = $('#np-inc');
+  if(rs && is){
+    const paint = function(){
+      const red = 1 - rs.value/100, inc = +is.value/100;
+      $('#np-red-out').textContent = fmtVol(goalTotal*(1-red), unit);
+      $('#np-red-sub').textContent = Math.round((1-red)*100)+'% of their goal';
+      $('#np-inc-out').textContent = '+'+Math.round(inc*100)+'%';
+      $('#np-warn').innerHTML = incWarn(inc);
+      $('#np-preview').innerHTML = rampPreview(goalTotal, red, inc, N.weeks || 12, unit);
+    };
+    rs.oninput = paint; is.oninput = paint;
+    rs.onchange = function(){ N.red = 1 - rs.value/100; };
+    is.onchange = function(){ N.inc = +is.value/100; };
+  }
+
+  $('#np-back').onclick = function(){
+    if(N.step === 1){ STATE.clinNew = false; STATE.newProg = null; }
+    else N.step = 1;
+    render();
+  };
+  $('#np-next').onclick = function(){
+    if(N.step === 1){
+      if(!N.name){ toast('Add the patient\u2019s name'); return; }
+      if(!inj || !act){ toast('Choose an injury and an activity'); return; }
+      N.step = 2; render(); return;
+    }
+    if(goalTotal <= 0){ toast('Set a goal for at least one day'); return; }
+    const proto = ensureProtocol(inj, act, unit);
+    const id = 'p'+(PATIENTS.length+1);
+    PATIENTS.push({ id:id, name:N.name, age:0, injury:inj.name,
+      goal:N.goal.slice(), red:N.red, inc:N.inc, weeks:N.weeks || 12,
+      protocol:proto.id, cur:1, since:'today',
+      colour:NEWCOLOURS[PATIENTS.length % NEWCOLOURS.length], logs:{}, levels:{} });
+    proto.uses = (proto.uses||0) + 1;
+    CHATS[id] = [{f:'c', t:'Welcome '+N.name.split(' ')[0]+'. Your first week is set up \u2014 log each session the same day and the plan adapts.', at:'today', unread:true}];
+    STATE.clinNew = false; STATE.newProg = null; STATE.clinPatient = id;
+    toast('Programme created \u2014 invite sent to the portal');
+    render();
+  };
 }
 
 function newProgrammeModal(){
