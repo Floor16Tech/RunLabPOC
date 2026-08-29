@@ -537,11 +537,20 @@ function injuryByKey(k){ return INJURIES.filter(function(x){ return x.key===k; }
 function activityByKey(k){ return ACTIVITIES.filter(function(x){ return x.key===k; })[0]; }
 
 /* the more cautious of the two wins */
-function composeProtocol(inj, act, unit){
+function composeProtocol(inj, act, unit, withIntervals){
   const inc = Math.min(inj.maxInc, act.maxInc);
   const red = Math.max(inj.defRed, act.defRed);
+  const iv = withIntervals && (act.key === 'run' || act.key === 'walk');
+  const streams = [];
+  if(iv){
+    streams.push({key:'intervals', type:'interval', name:'Walk/run', days:[1,3,5],
+                  from:1, forWeeks:6, every:1, steps:[{run:1,walk:4,reps:6},{run:2,walk:3,reps:5},{run:3,walk:2,reps:5},{run:5,walk:1,reps:4},{run:8,walk:1,reps:3},{run:10,walk:0,reps:2}]});
+    streams.push({key:'act', type:'volume', name:act.name, unit:(unit || act.units[0]), from:7, forWeeks:null});
+  } else {
+    streams.push({key:'act', type:'volume', name:act.name, unit:(unit || act.units[0])});
+  }
   return {
-    id: 'c-'+inj.key+'-'+act.key,
+    id: 'c-'+inj.key+'-'+act.key+(iv ? '-wr' : ''),
     name: inj.name+' \u2192 '+act.name,
     region: inj.region,
     note: inj.note,
@@ -549,7 +558,7 @@ function composeProtocol(inj, act, unit){
     red: red, inc: inc, weeks: Math.max(inj.weeks, act.weeks), uses: 0,
     painMode: 'session',
     algo: Object.assign({}, inj.algo, {sessionLoad:3, baselineNoValue:0.5}),
-    streams: [{key:'act', type:'volume', name:act.name, unit:(unit || act.units[0])}]
+    streams: streams
   };
 }
 
@@ -592,13 +601,9 @@ const PROTOCOLS = [
    algo:{ wDuring:0.40, wAfter:0.40, wBaseline:0.20, painStep:0.03,
           greenAt:0.91, yellowAt:0.90, deload:0.10, dwell:1, sessionLoad:3, flagPainDuring:6, flagPainAfter:4 },
    streams:[
-     {key:'intervals', type:'ladder', name:'Walk/run intervals', days:[1,3,5], from:1, forWeeks:6, every:1, rungs:[
-        '1 min run / 4 min walk \u00d7 6',
-        '2 min run / 3 min walk \u00d7 5',
-        '3 min run / 2 min walk \u00d7 5',
-        '5 min run / 1 min walk \u00d7 4',
-        '8 min run / 1 min walk \u00d7 3',
-        '10 min continuous \u00d7 2']},
+     {key:'intervals', type:'interval', name:'Walk/run', days:[1,3,5], from:1, forWeeks:6, every:1,
+      steps:[{run:1, walk:4, reps:6}, {run:2, walk:3, reps:5}, {run:3, walk:2, reps:5},
+             {run:5, walk:1, reps:4}, {run:8, walk:1, reps:3}, {run:10, walk:0, reps:2}]},
      {key:'run', type:'volume', name:'Continuous running', unit:'km', from:7, forWeeks:null}
    ]},
 
@@ -668,6 +673,38 @@ const PATIENTS = [
            '4-1':{pd:3,pa:3,b:'yes'} } }
 ];
 
+/* A physiotherapist decides three things about the goal: how much in a week,
+   how long the biggest single session is, and which days they train.
+   The per-day split is derived from those, not typed in. */
+function distributeGoal(weekTotal, sessionMax, days, longDay){
+  const g = [0,0,0,0,0,0,0];
+  if(!days || !days.length) return g;
+  const ld = (days.indexOf(longDay) >= 0) ? longDay : days[days.length-1];
+  if(days.length === 1){ g[ld] = weekTotal; return g; }
+  const long = Math.max(weekTotal/days.length, Math.min(sessionMax, weekTotal));
+  const each = Math.max(0, weekTotal - long) / (days.length - 1);
+  days.forEach(function(d){ g[d] = (d === ld) ? long : each; });
+  return g;
+}
+function syncGoal(p){
+  p.goal = distributeGoal(p.goalWeek, p.goalSession, p.days, p.longDay);
+  return p.goal;
+}
+/* the smallest session target that a week total can actually be split into */
+function minSession(weekTotal, days){
+  return days && days.length ? weekTotal/days.length : weekTotal;
+}
+
+/* existing programmes carry a per-day array; read the three numbers back out of it */
+PATIENTS.forEach(function(p){
+  if(p.goalWeek === undefined){
+    p.days = p.goal.map(function(g,i){ return g > 0 ? i : -1; }).filter(function(i){ return i >= 0; });
+    p.goalWeek = sum(p.goal);
+    p.goalSession = Math.max.apply(null, p.goal);
+    p.longDay = p.goal.indexOf(p.goalSession);
+  }
+});
+
 /* where each patient currently sits on each ladder */
 const START_LEVELS = { p1:{}, p2:{}, p3:{}, p4:{court:3}, p5:{intervals:0}, p6:{} };
 PATIENTS.forEach(function(p){ p.levels = START_LEVELS[p.id] || {}; });
@@ -706,10 +743,16 @@ function itemActive(it, w, totalWeeks){
   return w >= from && w <= upto;
 }
 function doseInit(it){
-  if(it.type === 'sets')   return { sets:it.start.sets, reps:it.start.reps, load:it.start.load || 0 };
-  if(it.type === 'ladder') return { rung: it.start && it.start.rung ? it.start.rung : 0 };
+  if(it.type === 'sets')     return { sets:it.start.sets, reps:it.start.reps, load:it.start.load || 0 };
+  if(it.type === 'ladder')   return { rung: it.start && it.start.rung ? it.start.rung : 0 };
+  if(it.type === 'interval') return { step: 0 };
   return {};
 }
+function intervalStep(it, dose){
+  const steps = it.steps || [];
+  return steps[Math.max(0, Math.min(steps.length-1, (dose && dose.step) || 0))] || {run:1, walk:4, reps:6};
+}
+function intervalMinutes(st){ return (st.run + st.walk) * st.reps; }
 function doseAdvance(it, dose, dir){
   const d = Object.assign({}, dose);
   if(it.type === 'sets'){
@@ -727,6 +770,9 @@ function doseAdvance(it, dose, dir){
   } else if(it.type === 'ladder'){
     if(dir === 'up')   d.rung = Math.min(it.rungs.length-1, d.rung+1);
     if(dir === 'down') d.rung = Math.max(0, d.rung-1);
+  } else if(it.type === 'interval'){
+    if(dir === 'up')   d.step = Math.min((it.steps||[]).length-1, d.step+1);
+    if(dir === 'down') d.step = Math.max(0, d.step-1);
   }
   return d;
 }
@@ -734,7 +780,21 @@ function doseText(it, dose){
   if(!dose) return '';
   if(it.type === 'sets')   return dose.sets+' \u00d7 '+dose.reps+(dose.load ? ' @ '+dose.load+' kg' : ' bodyweight');
   if(it.type === 'ladder') return it.rungs[dose.rung || 0];
+  if(it.type === 'interval'){
+    const st = intervalStep(it, dose);
+    return st.run+' min run / '+st.walk+' min walk \u00d7 '+st.reps;
+  }
   return '';
+}
+function doseDetail(it, dose){
+  if(it.type === 'interval'){
+    const st = intervalStep(it, dose);
+    return intervalMinutes(st)+' min total, '+(st.run*st.reps)+' min of it running';
+  }
+  return '';
+}
+function stepCount(it){
+  return it.type==='interval' ? (it.steps||[]).length : (it.rungs||[]).length;
 }
 
 function computeProgram(p, cfg){
@@ -1015,13 +1075,16 @@ function wToday(p, prog, wk){
         (prog.extras.length ? '<div class="pcard"><h4>Where you are up to</h4>'+
           prog.extras.filter(function(it){ return itemActive(it, wk.w, p.weeks); }).map(function(it){
             const dose = wk.doses[it.key];
-            const bar = it.type==='ladder'
-              ? '<div style="display:flex;gap:3px;margin-top:7px">'+it.rungs.map(function(r,i){
-                  return '<div style="flex:1;height:6px;border-radius:99px;background:'+(i<=(dose.rung||0)?'var(--accent)':'var(--line)')+'"></div>';
+            const at = it.type==='interval' ? (dose.step||0) : (dose.rung||0);
+            const n = stepCount(it);
+            const bar = n ? '<div style="display:flex;gap:3px;margin-top:7px">'+
+                Array.apply(null,{length:n}).map(function(_,i){
+                  return '<div style="flex:1;height:6px;border-radius:99px;background:'+(i<=at?'var(--accent)':'var(--line)')+'"></div>';
                 }).join('')+'</div>' : '';
+            const extraTxt = doseDetail(it, dose);
             return '<div style="margin-bottom:13px"><div style="font-weight:640;font-size:13px">'+it.name+'</div>'+
-              '<div class="sm">'+doseText(it, dose)+
-              (it.type==='ladder' ? ' \u00b7 step '+((dose.rung||0)+1)+' of '+it.rungs.length : '')+'</div>'+bar+'</div>';
+              '<div class="sm">'+doseText(it, dose)+(extraTxt ? ' \u00b7 '+extraTxt : '')+
+              (n ? ' \u00b7 step '+(at+1)+' of '+n : '')+'</div>'+bar+'</div>';
           }).join('')+'</div>' : '')+
 
         '<div class="pcard"><h4>The rules we agreed</h4><div class="sm" style="line-height:1.8">'+
@@ -1475,12 +1538,7 @@ function weekTable(p, prog){
 function builderCard(p, prog){
   return '<div class="card" style="margin-bottom:16px"><div class="card-h"><h3>Programme</h3>'+
     '<span class="hint">edit live — everything recalculates</span></div><div class="card-b">'+
-    '<span class="lbl">Goal per day</span>'+
-    '<div style="display:flex;gap:5px;margin-bottom:14px">'+ DAYS.map(function(d,i){
-      return '<div style="flex:1;text-align:center"><div style="font-size:10px;color:var(--muted);font-weight:700;margin-bottom:3px">'+d+'</div>'+
-        '<input type="number" min="0" step="0.5" value="'+p.goal[i]+'" data-goal="'+i+'" style="width:100%;padding:7px 2px;text-align:center;border:1px solid var(--line);border-radius:7px;font-weight:600"></div>';
-    }).join('') +'</div>'+
-    '<div class="kv" style="margin-bottom:12px"><span class="k">Goal weekly volume</span><span class="v">'+prog.goalTotal+' km over '+prog.runDays.length+' days</span></div>'+
+    goalFields(p, prog.unit, 'bd')+
     rampSliders(p.red, p.inc, prog.goalTotal, prog.unit, 'bd')+
     '<div id="bd-preview" style="margin-top:14px">'+rampPreview(prog.goalTotal, p.red, p.inc, p.weeks, prog.unit)+'</div>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px">'+
@@ -1516,6 +1574,33 @@ function rampPreview(goalTotal, red, inc, weeks, unit){
                   : 'If every week is graded green it reaches the goal after <b>'+n+' week'+(n===1?'':'s')+'</b>'+
                     (n > weeks ? ', which is longer than the '+weeks+' weeks set.' : ' of the '+weeks+' set.'))+
       ' Real programmes hold and deload, so this is the fastest case.</div>';
+}
+
+/* week total, longest session, and which days */
+function goalFields(p, unit, pre){
+  const minS = minSession(p.goalWeek, p.days);
+  return '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">'+
+      '<label class="field" style="margin:0"><span class="lbl">Goal each week ('+unitLabel(unit)+')</span>'+
+        '<input type="number" min="0" step="0.5" id="'+pre+'-gw" value="'+r1(p.goalWeek)+'"></label>'+
+      '<label class="field" style="margin:0"><span class="lbl">Longest single session</span>'+
+        '<input type="number" min="0" step="0.5" id="'+pre+'-gs" value="'+r1(p.goalSession)+'"></label>'+
+    '</div>'+
+    '<span class="lbl">Training days</span>'+
+    '<div class="daypick" style="margin-bottom:12px">'+ DAYS.map(function(dn, di){
+      return '<button data-'+pre+'day="'+di+'" class="'+(p.days.indexOf(di)>=0?'on':'')+'">'+dn+'</button>';
+    }).join('') +'</div>'+
+    '<label class="field"><span class="lbl">Longest session falls on</span>'+
+      '<select id="'+pre+'-ld">'+ p.days.map(function(d){
+        return '<option value="'+d+'"'+(d===p.longDay?' selected':'')+'>'+DAYSL[d]+'</option>';
+      }).join('') +'</select></label>'+
+    '<div class="note" style="margin-bottom:14px">'+
+      (p.days.length
+        ? 'Splits as '+p.days.map(function(d){ return DAYS[d]+' '+fmtVol(p.goal[d], unit); }).join(', ')+'.'+
+          (p.goalSession < minS - 0.01
+            ? ' <b>The longest session cannot be under '+fmtVol(minS, unit)+' across '+p.days.length+' days</b>, so it has been raised.'
+            : '')
+        : 'Pick at least one training day.')+
+    '</div>';
 }
 
 /* the two decisions a physiotherapist makes in the room */
@@ -1615,9 +1700,17 @@ function bindBuilder(p){
     is.oninput  = function(){ repaint(1 - rs.value/100, +is.value/100); };
     is.onchange = function(){ p.inc = +is.value/100; render(); };
   }
-  $$('[data-goal]').forEach(function(el){
-    el.onchange = function(){ p.goal[+el.dataset.goal] = Math.max(0, +el.value||0); render(); };
-  });
+  const gw = $('#bd-gw'), gs = $('#bd-gs'), ld = $('#bd-ld');
+  if(gw) gw.onchange = function(){ p.goalWeek = Math.max(0, +gw.value||0); syncGoal(p); render(); };
+  if(gs) gs.onchange = function(){ p.goalSession = Math.max(0, +gs.value||0); syncGoal(p); render(); };
+  if(ld) ld.onchange = function(){ p.longDay = +ld.value; syncGoal(p); render(); };
+  $$('[data-bdday]').forEach(function(el){ el.onclick = function(){
+    const d = +el.dataset.bdday, at = p.days.indexOf(d);
+    if(at >= 0){ if(p.days.length > 1) p.days.splice(at,1); }
+    else p.days.push(d);
+    p.days.sort(function(a,b){ return a-b; });
+    if(p.days.indexOf(p.longDay) < 0) p.longDay = p.days[p.days.length-1];
+    syncGoal(p); render(); }; });
   $$('[data-set]').forEach(function(el){
     el.onchange = function(){
       const k = el.dataset.set, v = +el.value||0;
@@ -1655,13 +1748,16 @@ function overrideModal(p, w){
 }
 
 /* find the composed protocol for this pairing, or make it */
-function ensureProtocol(inj, act, unit){
+function ensureProtocol(inj, act, unit, withIntervals){
+  const wantIv = !!(withIntervals && (act.key==='run' || act.key==='walk'));
   const match = PROTOCOLS.filter(function(x){
+    const hasIv = (x.streams||[]).some(function(st){ return st.type==='interval'; });
+    const vol = (x.streams||[]).filter(function(st){ return st.type==='volume'; })[0];
     return x.from && x.from.injury===inj.key && x.from.activity===act.key &&
-           x.streams[0] && x.streams[0].unit===unit;
+           hasIv === wantIv && vol && vol.unit===unit;
   })[0];
   if(match) return match;
-  const proto = composeProtocol(inj, act, unit);
+  const proto = composeProtocol(inj, act, unit, wantIv);
   let id = proto.id, n = 2;
   while(PROTOCOLS.filter(function(x){ return x.id===id; }).length){ id = proto.id+'-'+n; n++; }
   proto.id = id; PROTOCOLS.push(proto);
@@ -1672,7 +1768,10 @@ const NEWCOLOURS = ['#0a0a0a','#3f3f46','#E31B23','#52525b','#71717a','#27272a']
 
 function newProgramme(){
   const N = STATE.newProg = STATE.newProg || {step:1, name:'', injury:null, activity:null, unit:null,
+                                              goalWeek:0, goalSession:0, days:[], longDay:6,
                                               goal:[0,0,0,0,0,0,0], red:null, inc:null, weeks:null};
+  const nsync = function(){ N.goal = distributeGoal(N.goalWeek, N.goalSession, N.days, N.longDay); };
+  nsync();
   const inj = N.injury ? injuryByKey(N.injury) : null;
   const act = N.activity ? activityByKey(N.activity) : null;
   const unit = N.unit || (act ? act.units[0] : 'km');
@@ -1714,15 +1813,16 @@ function newProgramme(){
         (act.units.length > 1 ? '<label class="field"><span class="lbl">Measured in</span><select id="np-unit">'+
           act.units.map(function(u){ return '<option value="'+u+'"'+(u===unit?' selected':'')+'>'+unitLabel(u)+'</option>'; }).join('')+
           '</select></label>' : '')+
-        '<span class="lbl">Goal per day</span>'+
-        '<div style="display:flex;gap:5px;margin-bottom:12px">'+ DAYS.map(function(d,i){
-          return '<div style="flex:1;text-align:center"><div style="font-size:10px;color:var(--muted);font-weight:700;margin-bottom:3px">'+d+'</div>'+
-            '<input type="number" min="0" step="0.5" value="'+N.goal[i]+'" data-ngoal="'+i+'" style="width:100%;padding:8px 2px;text-align:center;border:1px solid var(--line);border-radius:7px;font-weight:600"></div>';
-        }).join('') +'</div>'+
-        '<div class="kv"><span class="k">Goal each week</span><span class="v">'+fmtVol(goalTotal, unit)+
-          ' over '+N.goal.filter(function(g){return g>0;}).length+' days</span></div>'+
-        '<label class="field" style="margin-top:12px;margin-bottom:0"><span class="lbl">Programme length (weeks)</span>'+
+        goalFields({goalWeek:N.goalWeek, goalSession:N.goalSession, days:N.days, longDay:N.longDay, goal:N.goal}, unit, 'np')+
+        '<label class="field" style="margin-top:12px"><span class="lbl">Programme length (weeks)</span>'+
           '<input type="number" id="np-weeks" min="2" max="26" value="'+(N.weeks || Math.max(inj.weeks, act.weeks))+'" style="max-width:120px"></label>'+
+        ((act.key==='run' || act.key==='walk')
+          ? '<div class="setrow" style="border-top:1px solid var(--line);padding-top:14px"><div style="flex:1">'+
+            '<div class="st">They cannot go continuously yet</div>'+
+            '<div class="sd">Start with walk/run intervals for six weeks, then move to continuous '+
+            act.name.toLowerCase()+'. The cadence climbs from 1 min run / 4 min walk to 10 min continuous.</div></div>'+
+            '<div class="toggle '+(N.intervals?'on':'')+'" id="np-iv"><i></i></div></div>'
+          : '')+
       '</div></div></div><div>'+
 
       '<div class="sect"><div class="sect-h"><span class="sect-n">5</span><div style="flex:1"><h3>Their ramp</h3>'+
@@ -1767,9 +1867,19 @@ function newProgramme(){
     N.weeks = Math.max(i2.weeks, a2.weeks);
     render(); }; });
   const us = $('#np-unit'); if(us) us.onchange = function(){ N.unit = us.value; render(); };
-  $$('[data-ngoal]').forEach(function(el){ el.onchange = function(){
-    N.goal[+el.dataset.ngoal] = Math.max(0, +el.value||0); render(); }; });
+  const ngw = $('#np-gw'), ngs = $('#np-gs'), nld = $('#np-ld');
+  if(ngw) ngw.onchange = function(){ N.goalWeek = Math.max(0, +ngw.value||0);
+    if(!N.goalSession) N.goalSession = N.goalWeek/Math.max(1,N.days.length); render(); };
+  if(ngs) ngs.onchange = function(){ N.goalSession = Math.max(0, +ngs.value||0); render(); };
+  if(nld) nld.onchange = function(){ N.longDay = +nld.value; render(); };
+  $$('[data-npday]').forEach(function(el){ el.onclick = function(){
+    const d = +el.dataset.npday, at = N.days.indexOf(d);
+    if(at >= 0) N.days.splice(at,1); else N.days.push(d);
+    N.days.sort(function(a,b){ return a-b; });
+    if(N.days.indexOf(N.longDay) < 0) N.longDay = N.days[N.days.length-1];
+    render(); }; });
   const wk = $('#np-weeks'); if(wk) wk.onchange = function(){ N.weeks = Math.max(2, Math.min(26, +wk.value||12)); render(); };
+  const ivT = $('#np-iv'); if(ivT) ivT.onclick = function(){ N.intervals = !N.intervals; render(); };
 
   const rs = $('#np-red'), is = $('#np-inc');
   if(rs && is){
@@ -1798,10 +1908,12 @@ function newProgramme(){
       N.step = 2; render(); return;
     }
     if(goalTotal <= 0){ toast('Set a goal for at least one day'); return; }
-    const proto = ensureProtocol(inj, act, unit);
+    const proto = ensureProtocol(inj, act, unit, N.intervals);
     const id = 'p'+(PATIENTS.length+1);
     PATIENTS.push({ id:id, name:N.name, age:0, injury:inj.name,
-      goal:N.goal.slice(), red:N.red, inc:N.inc, weeks:N.weeks || 12,
+      goal:N.goal.slice(), goalWeek:N.goalWeek, goalSession:N.goalSession,
+      days:N.days.slice(), longDay:N.longDay,
+      red:N.red, inc:N.inc, weeks:N.weeks || 12,
       protocol:proto.id, cur:1, since:'today',
       colour:NEWCOLOURS[PATIENTS.length % NEWCOLOURS.length], logs:{}, levels:{} });
     proto.uses = (proto.uses||0) + 1;
@@ -2025,7 +2137,7 @@ function protocolComposer(){
 
   if(C.step === 3 && inj && act){
     const unit = C.unit || act.units[0];
-    const draft = composeProtocol(inj, act, unit);
+    const draft = composeProtocol(inj, act, unit, C.intervals);
     const A = Object.assign({}, CFG, draft.algo);
     const incFrom = inj.maxInc <= act.maxInc ? 'the injury' : 'the activity';
     const redFrom = inj.defRed >= act.defRed ? 'the injury' : 'the activity';
@@ -2056,6 +2168,10 @@ function protocolComposer(){
         '<div class="metrow"><span class="mk">Weekly increase ceiling</span><span class="mv">'+pct(act.maxInc)+'%</span></div>'+
         '<div class="metrow"><span class="mk">Typical starting reduction</span><span class="mv">'+pct(act.defRed)+'%</span></div>'+
         '<div class="metrow"><span class="mk">Absolute step cap</span><span class="mv">'+fmtVol((UNITS[unit]||UNITS.km).step, unit)+' a week</span></div>'+
+        ((act.key==='run'||act.key==='walk')
+          ? '<div class="setrow"><div style="flex:1"><div class="st">Begin with walk/run intervals</div>'+
+            '<div class="sd">Six weeks of intervals before continuous distance starts.</div></div>'+
+            '<div class="toggle '+(C.intervals?'on':'')+'" id="cp-iv"><i></i></div></div>' : '')+
         '<div class="note" style="margin-top:12px">'+act.note+'</div>'+
       '</div></div>'+
 
@@ -2097,9 +2213,10 @@ function protocolComposer(){
   $$('[data-inj]').forEach(function(b){ b.onclick=function(){ C.injury=b.dataset.inj; C.step=2; render(); }; });
   $$('[data-act]').forEach(function(b){ b.onclick=function(){ C.activity=b.dataset.act; C.unit=null; C.step=3; render(); }; });
   const uSel = $('#cp-unit'); if(uSel) uSel.onchange = function(){ C.unit = uSel.value; render(); };
+  const cIv = $('#cp-iv'); if(cIv) cIv.onclick = function(){ C.intervals = !C.intervals; render(); };
   const create = $('#cp-create');
   if(create) create.onclick = function(){
-    const proto = composeProtocol(inj, act, C.unit || act.units[0]);
+    const proto = composeProtocol(inj, act, C.unit || act.units[0], C.intervals);
     let id = proto.id, n = 2;
     while(PROTOCOLS.filter(function(x){ return x.id===id; }).length){ id = proto.id+'-'+n; n++; }
     proto.id = id;
@@ -2219,6 +2336,36 @@ function protocolEditor(){
               (pr.then==='load' ? 'the load goes up '+pr.thenBy+' kg' : 'a set is added')+'.</div></div>';
         }
 
+        if(st.type === 'interval'){
+          const steps = st.steps || [];
+          return '<div class="streamcard"><div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">'+
+            '<span class="pill pill-b">Walk / run</span>'+
+            '<input data-sname="'+i+'" value="'+String(st.name).replace(/"/g,'&quot;')+'" style="flex:1;min-width:0;padding:6px 9px;border:1px solid var(--line);border-radius:8px;font-weight:650">'+
+            '<button class="btn btn-sm" data-sdel="'+i+'">Remove</button></div>'+
+            '<span class="lbl">Days</span>'+
+            '<div class="daypick" style="margin-bottom:14px">'+DAYS.map(function(dn, di){
+              return '<button data-sday="'+i+'-'+di+'" class="'+((st.days||[]).indexOf(di)>=0?'on':'')+'">'+dn+'</button>';
+            }).join('')+'</div>'+
+            sched+
+            '<span class="lbl">Green weeks needed per step</span>'+
+            '<div class="slrow" style="margin-bottom:14px"><input type="range" class="slider" data-severy="'+i+'" min="1" max="4" step="1" value="'+(st.every||1)+'">'+
+              '<span class="slval" data-severyout="'+i+'">'+(st.every||1)+'</span></div>'+
+            '<span class="lbl">The cadence, easiest first</span>'+
+            '<div style="overflow-x:auto"><table style="background:var(--surface);border:1px solid var(--line);border-radius:9px">'+
+              '<thead><tr><th>Step</th><th>Run</th><th>Walk</th><th>Repeats</th><th>Total</th><th></th></tr></thead><tbody>'+
+              steps.map(function(x, k){
+                return '<tr><td class="mono">'+(k+1)+'</td>'+
+                  '<td><input type="number" min="0" step="1" data-iv="'+i+'-'+k+'-run" value="'+x.run+'" style="width:62px;padding:6px;border:1px solid var(--line);border-radius:7px;text-align:right"> min</td>'+
+                  '<td><input type="number" min="0" step="1" data-iv="'+i+'-'+k+'-walk" value="'+x.walk+'" style="width:62px;padding:6px;border:1px solid var(--line);border-radius:7px;text-align:right"> min</td>'+
+                  '<td><input type="number" min="1" step="1" data-iv="'+i+'-'+k+'-reps" value="'+x.reps+'" style="width:62px;padding:6px;border:1px solid var(--line);border-radius:7px;text-align:right"></td>'+
+                  '<td class="mono">'+intervalMinutes(x)+' min</td>'+
+                  '<td style="text-align:right"><button class="btn btn-sm" data-ivdel="'+i+'-'+k+'">\u2715</button></td></tr>';
+              }).join('') +'</tbody></table></div>'+
+            '<button class="btn btn-sm" style="margin-top:10px" data-ivadd="'+i+'">+ Add a step</button>'+
+            '<div style="font-size:12px;color:var(--muted);margin-top:9px">'+wkTxt+'. '+
+              'Set walk to 0 for a continuous run.</div></div>';
+        }
+
         return '<div class="streamcard"><div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">'+
           '<span class="pill pill-n">Stages</span>'+
           '<input data-sname="'+i+'" value="'+String(st.name).replace(/"/g,'&quot;')+'" style="flex:1;min-width:0;padding:6px 9px;border:1px solid var(--line);border-radius:8px;font-weight:650">'+
@@ -2235,7 +2382,9 @@ function protocolEditor(){
           '<textarea class="rungs" data-srungs="'+i+'">'+(st.rungs||[]).join('\n')+'</textarea>'+
           '<div style="font-size:12px;color:var(--muted);margin-top:7px">'+(st.rungs||[]).length+' stages. '+wkTxt+'.</div></div>';
       }).join('')+
-      '<button class="btn btn-sm" id="pe-addladder">+ Add a staged progression</button>'+
+      '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
+        '<button class="btn btn-sm" id="pe-addintervals">+ Add walk/run intervals</button>'+
+        '<button class="btn btn-sm" id="pe-addladder">+ Add a staged progression</button></div>'+
       '<div class="note" style="margin-top:12px">RAMP holds the return to activity. Strength and rehab exercises are '+
       'deliberately out of scope for now — everything in a plan has to have a progression path, and those are usually '+
       'progressed on movement quality rather than on a pain score.</div>'+
@@ -2352,6 +2501,25 @@ function protocolEditor(){
     st.days.sort(); render(); }; });
   $$('[data-sdel]').forEach(function(el){ el.onclick = function(){ D.streams.splice(+el.dataset.sdel,1); render(); }; });
 
+  $$('[data-iv]').forEach(function(el){ el.onchange = function(){
+    const q = el.dataset.iv.split('-');
+    D.streams[+q[0]].steps[+q[1]][q[2]] = Math.max(0, +el.value||0); render(); }; });
+  $$('[data-ivdel]').forEach(function(el){ el.onclick = function(){
+    const q = el.dataset.ivdel.split('-');
+    if(D.streams[+q[0]].steps.length > 1) D.streams[+q[0]].steps.splice(+q[1], 1);
+    render(); }; });
+  $$('[data-ivadd]').forEach(function(el){ el.onclick = function(){
+    const st = D.streams[+el.dataset.ivadd], last = st.steps[st.steps.length-1] || {run:1,walk:4,reps:6};
+    st.steps.push({run:last.run+1, walk:Math.max(0,last.walk-1), reps:last.reps});
+    render(); }; });
+  const addIv = $('#pe-addintervals');
+  if(addIv) addIv.onclick = function(){
+    D.streams.push({ key:'iv'+(D.streams.length+1), type:'interval', name:'Walk/run', days:[1,3,5],
+                     from:1, forWeeks:6, every:1,
+                     steps:[{run:1,walk:4,reps:6},{run:2,walk:3,reps:5},{run:3,walk:2,reps:5},
+                            {run:5,walk:1,reps:4},{run:8,walk:1,reps:3},{run:10,walk:0,reps:2}] });
+    render();
+  };
   $('#pe-addladder').onclick = function(){
     D.streams.push({ key:'lad'+(D.streams.length+1), type:'ladder', name:'New staged progression', days:[1,4],
                      from:1, forWeeks:null, every:2,
