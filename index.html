@@ -242,6 +242,25 @@ tbody tr.click:hover{background:var(--surface-2)}
 .setrow:last-child{border-bottom:0}
 .setrow .st{font-weight:600;font-size:13px}
 .setrow .sd{font-size:11.5px;color:var(--muted);line-height:1.45;margin-top:2px}
+.pickgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(232px,1fr));gap:10px}
+.pick{border:1.5px solid var(--line);border-radius:12px;padding:14px;text-align:left;background:var(--surface);transition:.15s;width:100%}
+.pick:hover{border-color:var(--accent);background:var(--accent-soft)}
+.pick.on{border-color:var(--accent);background:var(--accent-soft);box-shadow:0 0 0 3px var(--accent-soft)}
+.pick .pn{display:block;font-weight:680;font-size:13.5px}
+.pick .pr{display:block;font-size:11px;color:var(--muted);letter-spacing:.06em;text-transform:uppercase;font-weight:700;margin-top:3px}
+.pick .pd{display:block;font-size:12px;color:var(--ink-2);margin-top:7px;line-height:1.5}
+.pick .ptag{display:inline-block;font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--accent);margin-top:8px}
+.steps{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-bottom:20px}
+.stepchip{display:flex;align-items:center;gap:8px;padding:7px 13px;border-radius:99px;border:1px solid var(--line);font-size:12.5px;font-weight:640;color:var(--muted);background:var(--surface)}
+.stepchip.on{border-color:var(--ink);color:var(--ink)}
+.stepchip.done{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+.stepchip i{width:19px;height:19px;border-radius:99px;background:var(--line);color:var(--surface);display:grid;place-items:center;font-size:10.5px;font-weight:700;font-style:normal}
+.stepchip.on i{background:var(--ink)}
+.stepchip.done i{background:var(--accent)}
+.metrow{display:flex;justify-content:space-between;gap:14px;padding:9px 0;border-bottom:1px dashed var(--line);font-size:12.5px}
+.metrow:last-child{border-bottom:0}
+.metrow .mk{color:var(--muted)}
+.metrow .mv{font-weight:650;text-align:right}
 .sect{border:1px solid var(--line);border-radius:var(--r);background:var(--surface);margin-bottom:16px;box-shadow:var(--sh)}
 .sect-h{padding:14px 18px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px}
 .sect-n{width:24px;height:24px;border-radius:7px;background:var(--ink);color:#fff;display:grid;place-items:center;font-size:12px;font-weight:700;flex:0 0 24px}
@@ -406,6 +425,138 @@ const CFG = {
 };
 
 /* ---------- reference protocols the administrator maintains ---------- */
+/* ==================================================================
+   THE TWO HALVES OF A PROTOCOL
+
+   The INJURY decides how cautiously we read the patient's answers:
+   how the three responses are weighted, how much a point of pain costs,
+   where the thresholds and red flags sit. That is tissue biology and it
+   does not care what sport they play.
+
+   The ACTIVITY decides how fast we ramp and in what units. The 10% per
+   week evidence is about running load; swimming and golf behave
+   differently, and 8 km means nothing to a swimmer.
+
+   Where the two disagree, the more cautious value wins.
+   ================================================================== */
+const INJURIES = [
+  {key:'achilles', name:'Achilles tendinopathy', region:'Achilles / calf', weeks:12,
+   note:'Load-tolerant tissue. The next morning matters more than pain during the session.',
+   typical:['run','walk','court'], maxInc:0.10, defRed:0.35,
+   algo:{wDuring:0.30, wAfter:0.50, wBaseline:0.20, painStep:0.025, greenAt:0.91, yellowAt:0.90,
+         deload:0.10, dwell:2, flagPainDuring:7, flagPainAfter:5}},
+
+  {key:'patellar', name:'Patellar tendinopathy', region:'Knee', weeks:12,
+   note:'Jumping and deceleration load. Tolerates pain during loading; judge it the morning after.',
+   typical:['court','run'], maxInc:0.10, defRed:0.40,
+   algo:{wDuring:0.30, wAfter:0.50, wBaseline:0.20, painStep:0.025, greenAt:0.91, yellowAt:0.90,
+         deload:0.10, dwell:2, flagPainDuring:7, flagPainAfter:5}},
+
+  {key:'gluteal', name:'Gluteal tendinopathy', region:'Lateral hip', weeks:12,
+   note:'Compression-sensitive. Hills, stairs and long single-leg stance load it independently of distance.',
+   typical:['walk','run','bike'], maxInc:0.10, defRed:0.40,
+   algo:{wDuring:0.30, wAfter:0.50, wBaseline:0.20, painStep:0.03, greenAt:0.91, yellowAt:0.90,
+         deload:0.10, dwell:2, flagPainDuring:7, flagPainAfter:5}},
+
+  {key:'hamstring', name:'Proximal hamstring tendinopathy', region:'Ischial / posterior thigh', weeks:16,
+   note:'Slow to settle. Compression in hip flexion aggravates it, so uphill and speed work come last.',
+   typical:['run','walk','bike'], maxInc:0.08, defRed:0.45,
+   algo:{wDuring:0.30, wAfter:0.50, wBaseline:0.20, painStep:0.03, greenAt:0.91, yellowAt:0.90,
+         deload:0.10, dwell:3, flagPainDuring:6, flagPainAfter:5}},
+
+  {key:'cuff', name:'Rotator cuff related shoulder pain', region:'Shoulder', weeks:12,
+   note:'Overhead volume is the driver. Expect a slower response than lower limb tendon.',
+   typical:['swim','golf','court'], maxInc:0.10, defRed:0.45,
+   algo:{wDuring:0.35, wAfter:0.45, wBaseline:0.20, painStep:0.03, greenAt:0.91, yellowAt:0.90,
+         deload:0.10, dwell:2, flagPainDuring:6, flagPainAfter:5}},
+
+  {key:'elbow', name:'Medial epicondylalgia', region:'Elbow', weeks:12,
+   note:'Grip and swing load. Shot volume matters more than time on the course.',
+   typical:['golf','court'], maxInc:0.10, defRed:0.45,
+   algo:{wDuring:0.30, wAfter:0.50, wBaseline:0.20, painStep:0.03, greenAt:0.91, yellowAt:0.90,
+         deload:0.10, dwell:2, flagPainDuring:6, flagPainAfter:5}},
+
+  {key:'pfps', name:'Patellofemoral pain', region:'Knee', weeks:10,
+   note:'The largest standing caseload in most running clinics. Responds well to volume control.',
+   typical:['run','bike','walk'], maxInc:0.10, defRed:0.35,
+   algo:{wDuring:0.40, wAfter:0.40, wBaseline:0.20, painStep:0.025, greenAt:0.91, yellowAt:0.90,
+         deload:0.10, dwell:2, flagPainDuring:7, flagPainAfter:5}},
+
+  {key:'mtss', name:'Medial tibial stress syndrome', region:'Shin', weeks:10,
+   note:'Volume-driven. Treat a jump in the long session as seriously as a jump in the week.',
+   typical:['run','walk'], maxInc:0.08, defRed:0.45,
+   algo:{wDuring:0.45, wAfter:0.35, wBaseline:0.20, painStep:0.035, greenAt:0.92, yellowAt:0.90,
+         deload:0.15, dwell:2, flagPainDuring:5, flagPainAfter:4}},
+
+  {key:'plantar', name:'Plantar fasciopathy', region:'Heel / plantar fascia', weeks:14,
+   note:'First-step morning pain is the cleanest signal in the whole system. Weight it heavily.',
+   typical:['run','walk'], maxInc:0.10, defRed:0.40,
+   algo:{wDuring:0.25, wAfter:0.55, wBaseline:0.20, painStep:0.025, greenAt:0.91, yellowAt:0.90,
+         deload:0.10, dwell:2, flagPainDuring:7, flagPainAfter:5}},
+
+  {key:'bone', name:'Bone stress injury, low-risk site', region:'Tibia / metatarsal', weeks:16,
+   note:'Posteromedial tibia, metatarsals 2 to 4, fibula only. Any pain during loading is a stop rule.',
+   typical:['run','walk','bike','swim'], maxInc:0.08, defRed:0.55,
+   algo:{wDuring:0.55, wAfter:0.25, wBaseline:0.20, painStep:0.04, greenAt:0.93, yellowAt:0.91,
+         deload:0.15, dwell:3, flagPainDuring:4, flagPainAfter:3}},
+
+  {key:'aclr', name:'Post-ACLR', region:'Knee', weeks:12,
+   note:'Hop-test clearance before starting. Stage changes should be gated on testing, not on a pain score.',
+   typical:['run','court','bike'], maxInc:0.12, defRed:0.40,
+   algo:{wDuring:0.35, wAfter:0.35, wBaseline:0.30, painStep:0.03, greenAt:0.92, yellowAt:0.90,
+         deload:0.10, dwell:2, flagPainDuring:6, flagPainAfter:4}}
+];
+
+const ACTIVITIES = [
+  {key:'run',   name:'Running', detail:'Road and trail', units:['km','min'], weeks:12,
+   maxInc:0.10, defRed:0.35, days:[0,0,1,0,1,0,1.6],
+   note:'Weekly increases above 10% raise injury likelihood sharply, and a single long run that spikes matters as much as the weekly total.'},
+
+  {key:'walk',  name:'Walking and hiking', detail:'Flat and hills', units:['min','km'], weeks:12,
+   maxInc:0.12, defRed:0.35, days:[1,0,1,0,1,0,1.5],
+   note:'Well tolerated and easy to report. The usual limiter is time on feet rather than pace.'},
+
+  {key:'bike',  name:'Cycling', detail:'Road, gravel or indoor', units:['min','km'], weeks:10,
+   maxInc:0.15, defRed:0.30, days:[0,1,0,1,0,0,2],
+   note:'Non-weight-bearing, so it tolerates a faster ramp than running for the same tissue.'},
+
+  {key:'swim',  name:'Swimming', detail:'Pool laps', units:['m','min'], weeks:10,
+   maxInc:0.15, defRed:0.30, days:[0,1,0,1,0,0,1.5],
+   note:'Non-weight-bearing. Volume first, then stroke variety, then intensity.'},
+
+  {key:'court', name:'Court sports', detail:'Tennis, pickleball, badminton, squash, basketball, volleyball',
+   units:['min'], weeks:12, maxInc:0.10, defRed:0.50, days:[0,1,0,1,0,0,1.5],
+   note:'Minutes on court is the reportable unit. Jump and change-of-direction load is what actually accumulates, so ramp conservatively.'},
+
+  {key:'golf',  name:'Golf', detail:'Holes played, or balls at the range', units:['holes','balls'], weeks:12,
+   maxInc:0.15, defRed:0.55, days:[0,0,1,0,0,1,1],
+   note:'Progresses in coarse steps. Physiotherapists typically allow two to three weeks at each stage of club use.'}
+];
+
+function injuryByKey(k){ return INJURIES.filter(function(x){ return x.key===k; })[0]; }
+function activityByKey(k){ return ACTIVITIES.filter(function(x){ return x.key===k; })[0]; }
+
+/* the more cautious of the two wins */
+function composeProtocol(inj, act, unit){
+  const inc = Math.min(inj.maxInc, act.maxInc);
+  const red = Math.max(inj.defRed, act.defRed);
+  return {
+    id: 'c-'+inj.key+'-'+act.key,
+    name: inj.name+' \u2192 '+act.name,
+    region: inj.region,
+    note: inj.note,
+    from: {injury:inj.key, activity:act.key},
+    red: red, inc: inc, weeks: Math.max(inj.weeks, act.weeks), uses: 0,
+    painMode: 'session',
+    algo: Object.assign({}, inj.algo, {sessionLoad:3, baselineNoValue:0.5}),
+    streams: [{key:'act', type:'volume', name:act.name, unit:(unit || act.units[0])}]
+  };
+}
+
+function nominalGoal(unit){
+  return {km:30, min:180, m:3000, holes:18, balls:150}[unit] || 30;
+}
+
 /* A protocol answers three questions:
      1. what the patient does           -> streams
      2. what we ask them afterwards     -> the shared three questions, plus completion
@@ -1572,7 +1723,8 @@ function incWarn(inc){
 }
 
 function previewHTML(D, A){
-  const goal = 30, N = Math.min(D.weeks, 10);
+  const u0 = (D.streams.filter(function(x){ return x.type==='volume'; })[0] || {}).unit || 'km';
+  const goal = nominalGoal(u0), N = Math.min(D.weeks, 10);
   const extras = D.streams.filter(function(x){ return x.type !== 'volume'; });
   const volS   = D.streams.filter(function(x){ return x.type === 'volume'; })[0] || null;
   const u      = (volS && volS.unit) || 'km';
@@ -1609,8 +1761,137 @@ function previewHTML(D, A){
 }
 
 /* ---------- the protocol builder ---------- */
+function protocolComposer(){
+  const C = STATE.compose = STATE.compose || {step:1, injury:null, activity:null, unit:null};
+  const inj = C.injury ? injuryByKey(C.injury) : null;
+  const act = C.activity ? activityByKey(C.activity) : null;
+
+  const chip = function(n, label, state){
+    return '<div class="stepchip '+state+'"><i>'+(state==='done'?'\u2713':n)+'</i>'+label+'</div>';
+  };
+  const steps = '<div class="steps">'+
+    chip(1,'What are we treating?', C.step===1?'on':(inj?'done':''))+
+    '<span style="color:var(--line)">\u203a</span>'+
+    chip(2,'Getting back to what?',  C.step===2?'on':(act?'done':''))+
+    '<span style="color:var(--line)">\u203a</span>'+
+    chip(3,'Review',                 C.step===3?'on':'')+'</div>';
+
+  let body = '';
+
+  if(C.step === 1){
+    body = '<div class="note" style="margin-bottom:16px">The injury decides how cautiously RAMP reads the patient\u2019s answers: '+
+      'how the three responses are weighted, how much a point of pain costs, and where the red flags sit. That is tissue biology, '+
+      'and it does not change with the sport.</div>'+
+      '<div class="pickgrid">'+ INJURIES.map(function(x){
+        return '<button class="pick '+(C.injury===x.key?'on':'')+'" data-inj="'+x.key+'">'+
+          '<span class="pn">'+x.name+'</span><span class="pr">'+x.region+'</span>'+
+          '<span class="pd">'+x.note+'</span></button>';
+      }).join('') +'</div>';
+  }
+
+  if(C.step === 2){
+    body = '<div class="note" style="margin-bottom:16px">The activity decides how fast the ramp goes and in what units. '+
+      'The 10% per week evidence is about running load; swimming and golf behave differently, and 8 km means nothing to a swimmer.</div>'+
+      '<div class="pickgrid">'+ ACTIVITIES.map(function(a){
+        const typical = inj && inj.typical.indexOf(a.key) >= 0;
+        return '<button class="pick '+(C.activity===a.key?'on':'')+'" data-act="'+a.key+'">'+
+          '<span class="pn">'+a.name+'</span><span class="pr">'+a.detail+'</span>'+
+          '<span class="pd">'+a.note+'</span>'+
+          (typical ? '<span class="ptag">Commonly paired with '+inj.name.split(' ')[0].toLowerCase()+'</span>' : '')+
+          '</button>';
+      }).join('') +'</div>';
+  }
+
+  if(C.step === 3 && inj && act){
+    const unit = C.unit || act.units[0];
+    const draft = composeProtocol(inj, act, unit);
+    const A = Object.assign({}, CFG, draft.algo);
+    const incFrom = inj.maxInc <= act.maxInc ? 'the injury' : 'the activity';
+    const redFrom = inj.defRed >= act.defRed ? 'the injury' : 'the activity';
+
+    body =
+      '<div class="grid dgrid" style="align-items:start"><div>'+
+
+      '<div class="sect"><div class="sect-h"><span class="sect-n">A</span><div style="flex:1"><h3>From the injury</h3>'+
+        '<div class="sh">'+inj.name+'</div></div></div><div class="sect-b">'+
+        '<div class="metrow"><span class="mk">Pain during the session</span><span class="mv">'+A.wDuring.toFixed(2)+'</span></div>'+
+        '<div class="metrow"><span class="mk">Pain the next morning</span><span class="mv">'+A.wAfter.toFixed(2)+'</span></div>'+
+        '<div class="metrow"><span class="mk">Symptoms settled</span><span class="mv">'+A.wBaseline.toFixed(2)+'</span></div>'+
+        '<div class="metrow"><span class="mk">Cost of one pain point</span><span class="mv">'+A.painStep+'</span></div>'+
+        '<div class="metrow"><span class="mk">Progress / hold</span><span class="mv">'+A.greenAt+' / '+A.yellowAt+'</span></div>'+
+        '<div class="metrow"><span class="mk">Deload</span><span class="mv">'+pct(A.deload)+'%</span></div>'+
+        '<div class="metrow"><span class="mk">Red flag</span><span class="mv">'+A.flagPainDuring+'/10 during, '+A.flagPainAfter+'/10 after</span></div>'+
+        '<div class="note" style="margin-top:12px">'+
+          (A.wAfter > A.wDuring ? 'Weighted toward <b>the next morning</b>, which is how tendon responds.'
+                                : (A.wDuring > A.wAfter ? 'Weighted toward <b>pain during the session</b>, which is the stop rule here.'
+                                                        : 'Both pain answers weighted equally.'))+'</div>'+
+      '</div></div>'+
+
+      '<div class="sect"><div class="sect-h"><span class="sect-n">B</span><div style="flex:1"><h3>From the activity</h3>'+
+        '<div class="sh">'+act.name+'</div></div></div><div class="sect-b">'+
+        '<label class="field"><span class="lbl">Measured in</span><select id="cp-unit">'+
+          act.units.map(function(u){ return '<option value="'+u+'"'+(u===unit?' selected':'')+'>'+unitLabel(u)+'</option>'; }).join('')+
+        '</select></label>'+
+        '<div class="metrow"><span class="mk">Weekly increase ceiling</span><span class="mv">'+pct(act.maxInc)+'%</span></div>'+
+        '<div class="metrow"><span class="mk">Typical starting reduction</span><span class="mv">'+pct(act.defRed)+'%</span></div>'+
+        '<div class="metrow"><span class="mk">Absolute step cap</span><span class="mv">'+fmtVol((UNITS[unit]||UNITS.km).step, unit)+' a week</span></div>'+
+        '<div class="note" style="margin-top:12px">'+act.note+'</div>'+
+      '</div></div>'+
+
+      '</div><div>'+
+
+      '<div class="sect"><div class="sect-h"><span class="sect-n">=</span><div style="flex:1"><h3>Where they meet</h3>'+
+        '<div class="sh">The more cautious of the two wins</div></div></div><div class="sect-b">'+
+        '<div class="calc" style="margin-bottom:14px">'+
+          'weekly increase = min( '+pct(inj.maxInc)+'% injury , '+pct(act.maxInc)+'% activity ) = <b style="color:var(--ink)">'+pct(draft.inc)+'%</b><br>'+
+          'start below goal = max( '+pct(inj.defRed)+'% injury , '+pct(act.defRed)+'% activity ) = <b style="color:var(--ink)">'+pct(draft.red)+'%</b><br>'+
+          'length = max( '+inj.weeks+' , '+act.weeks+' ) = <b style="color:var(--ink)">'+draft.weeks+' weeks</b>'+
+        '</div>'+
+        '<div class="note">The pace comes from <b>'+incFrom+'</b> and the starting point from <b>'+redFrom+'</b>. '+
+        'Week 1 is '+pct(1-draft.red)+'% of whatever goal the clinician sets with the patient.</div>'+
+        '<ul style="margin:14px 0 0;padding-left:19px;font-size:12.5px;line-height:1.7;color:var(--ink-2)">'+plainRules(A)+'</ul>'+
+      '</div></div>'+
+
+      '<div class="sect"><div class="sect-h"><span class="sect-n">\u25b8</span><div style="flex:1"><h3>What this builds</h3>'+
+        '<div class="sh">Every week graded green</div></div></div>'+
+        '<div class="sect-b">'+previewHTML({weeks:draft.weeks, red:draft.red, inc:draft.inc, streams:draft.streams}, A)+'</div></div>'+
+
+      '</div></div>';
+  }
+
+  $('#adminBody').innerHTML =
+    '<div style="display:flex;align-items:center;gap:12px;margin-bottom:18px;flex-wrap:wrap">'+
+      '<button class="btn btn-sm" id="cp-back">\u2039 '+(C.step===1?'All protocols':'Back')+'</button>'+
+      '<div style="flex:1 1 200px;min-width:0"><h2 style="font-size:19px">Build a protocol</h2>'+
+      '<div style="font-size:12.5px;color:var(--muted)">'+
+        (inj && act ? inj.name+' \u2192 '+act.name : 'An injury and an activity make a protocol')+'</div></div>'+
+      (C.step===3 ? '<button class="btn btn-sm btn-p" id="cp-create">Create and fine-tune</button>' : '')+
+    '</div>'+ steps + body;
+
+  $('#cp-back').onclick = function(){
+    if(C.step === 1){ STATE.protoEdit=null; STATE.compose=null; }
+    else C.step--;
+    render();
+  };
+  $$('[data-inj]').forEach(function(b){ b.onclick=function(){ C.injury=b.dataset.inj; C.step=2; render(); }; });
+  $$('[data-act]').forEach(function(b){ b.onclick=function(){ C.activity=b.dataset.act; C.unit=null; C.step=3; render(); }; });
+  const uSel = $('#cp-unit'); if(uSel) uSel.onchange = function(){ C.unit = uSel.value; render(); };
+  const create = $('#cp-create');
+  if(create) create.onclick = function(){
+    const proto = composeProtocol(inj, act, C.unit || act.units[0]);
+    let id = proto.id, n = 2;
+    while(PROTOCOLS.filter(function(x){ return x.id===id; }).length){ id = proto.id+'-'+n; n++; }
+    proto.id = id;
+    PROTOCOLS.push(proto);
+    STATE.compose = null; STATE.protoDraft = null; STATE.protoEdit = id;
+    toast('Protocol created \u2014 fine-tune it below');
+    render();
+  };
+}
+
 function protocolEditor(){
-  const isNew = STATE.protoEdit === 'new';
+  if(STATE.protoEdit === 'new') return protocolComposer();
+  const isNew = false;
   const src = isNew ? null : PROTOCOLS.filter(function(x){ return x.id===STATE.protoEdit; })[0];
   if(!isNew && !src){ STATE.protoEdit = null; return adProtocols(); }
 
@@ -1787,7 +2068,7 @@ function protocolEditor(){
     '</div></div>'+
 
     '<div class="sect"><div class="sect-h"><span class="sect-n">5</span><div style="flex:1"><h3>What this builds</h3>'+
-      '<div class="sh">A nominal 30-unit goal with every week graded green \u2014 move a slider and watch it change</div></div></div>'+
+      '<div class="sh">A goal of '+fmtVol(nominalGoal((D.streams.filter(function(x){return x.type==="volume";})[0]||{}).unit||'km'),(D.streams.filter(function(x){return x.type==="volume";})[0]||{}).unit||'km')+' with every week graded green \u2014 move a slider and watch it change</div></div></div>'+
       '<div class="sect-b" id="pe-preview">'+previewHTML(D, A)+'</div></div>'+
 
     '</div></div>';
