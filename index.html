@@ -403,17 +403,6 @@ const PROTOCOLS = [
           greenAt:0.91, yellowAt:0.90, deload:0.10, dwell:2, sessionLoad:4, flagPainDuring:7, flagPainAfter:5 },
    streams:[
      {key:'run',  type:'volume', name:'Running', unit:'km'},
-     {key:'calf', type:'sets', name:'Calf raise', days:[0,3,5], from:1, forWeeks:null, every:1,
-      start:{sets:3, reps:10, load:0},
-      prog:{by:2, cap:15, then:'load', thenBy:5}},
-     {key:'sol', type:'sets', name:'Bent-knee soleus raise', days:[0,3], from:1, forWeeks:8, every:1,
-      start:{sets:3, reps:12, load:0},
-      prog:{by:2, cap:18, then:'set', thenBy:1}},
-     {key:'hop', type:'ladder', name:'Hopping progression', days:[5], from:5, forWeeks:null, every:2,
-      rungs:['Two-foot hop in place, 3\u00d710',
-             'Two-foot hop forward, 3\u00d710',
-             'Single-leg hop in place, 3\u00d78',
-             'Single-leg hop forward, 3\u00d78']}
    ]},
 
   {id:'bone', name:'Bone stress injury \u2014 cautious', region:'Tibia / metatarsal',
@@ -430,6 +419,22 @@ const PROTOCOLS = [
           greenAt:0.91, yellowAt:0.90, deload:0.10, dwell:2, flagPainDuring:7, flagPainAfter:5 },
    streams:[ {key:'run', type:'volume', name:'Running', unit:'km'} ]},
 
+  {id:'entry', name:'Return to run \u2014 staged from walking', region:'Any lower limb',
+   red:0.60, inc:0.10, weeks:14, uses:11,
+   note:'For someone not yet running. Walk/run intervals first, continuous distance once they hold 10 minutes.',
+   algo:{ wDuring:0.40, wAfter:0.40, wBaseline:0.20, painStep:0.03,
+          greenAt:0.91, yellowAt:0.90, deload:0.10, dwell:1, sessionLoad:3, flagPainDuring:6, flagPainAfter:4 },
+   streams:[
+     {key:'intervals', type:'ladder', name:'Walk/run intervals', days:[1,3,5], from:1, forWeeks:6, every:1, rungs:[
+        '1 min run / 4 min walk \u00d7 6',
+        '2 min run / 3 min walk \u00d7 5',
+        '3 min run / 2 min walk \u00d7 5',
+        '5 min run / 1 min walk \u00d7 4',
+        '8 min run / 1 min walk \u00d7 3',
+        '10 min continuous \u00d7 2']},
+     {key:'run', type:'volume', name:'Continuous running', unit:'km', from:7, forWeeks:null}
+   ]},
+
   {id:'acl', name:'Post-ACLR return to sport', region:'Knee',
    red:0.35, inc:0.15, weeks:10, uses:9,
    note:'Hop-test clearance before week 1. Court exposure climbs only on clean weeks.',
@@ -437,9 +442,6 @@ const PROTOCOLS = [
           greenAt:0.92, yellowAt:0.90, deload:0.10, dwell:2, sessionLoad:5, flagPainDuring:6, flagPainAfter:4 },
    streams:[
      {key:'run',   type:'volume', name:'Running', unit:'km'},
-     {key:'quad', type:'sets', name:'Leg press', days:[1,4], from:1, forWeeks:null, every:1,
-      start:{sets:3, reps:8, load:40},
-      prog:{by:2, cap:12, then:'load', thenBy:10}},
      {key:'court', type:'ladder', name:'Return to court', days:[1,4], from:2, forWeeks:null, every:2, rungs:[
         'Individual drills, no ball',
         'Individual drills with ball',
@@ -487,7 +489,7 @@ const PATIENTS = [
            '7-1':{pd:0,pa:0,b:'yes'}, '7-3':{pd:1,pa:0,b:'yes'} } },
 
   { id:'p5', name:'Kelly Osei', age:38, injury:'Plantar fasciopathy — left',
-    goal:[0,0,5,0,5,0,8], red:0.30, inc:0.15, weeks:8, protocol:'std', cur:1,
+    goal:[0,0,5,0,5,0,8], red:0.60, inc:0.10, weeks:14, protocol:'entry', cur:1,
     since:'17 Aug 2026', colour:'#71717a', logs:{} },
 
   { id:'p6', name:'Tom Ferreira', age:52, injury:'Proximal hamstring tendinopathy',
@@ -500,7 +502,7 @@ const PATIENTS = [
 ];
 
 /* where each patient currently sits on each ladder */
-const START_LEVELS = { p1:{calf:1}, p2:{}, p3:{}, p4:{court:3}, p5:{calf:0}, p6:{calf:2} };
+const START_LEVELS = { p1:{}, p2:{}, p3:{}, p4:{court:3}, p5:{intervals:0}, p6:{} };
 PATIENTS.forEach(function(p){ p.levels = START_LEVELS[p.id] || {}; });
 
 /* ==================================================================
@@ -572,6 +574,7 @@ function computeProgram(p, cfg){
   const proto     = protocolOf(p);
   const A         = algoFor(p, cfg);          // scoring + thresholds: the protocol's
   const extras    = extrasOf(p);
+  const volStream = streamsOf(p).filter(function(x){ return x.type === 'volume'; })[0] || null;
   const goalTotal = sum(p.goal);
   const rel       = p.goal.map(g => goalTotal ? g/goalTotal : 0);
   const runDays   = p.goal.map((g,i)=> g>0 ? i : -1).filter(i=>i>=0);
@@ -590,8 +593,9 @@ function computeProgram(p, cfg){
     if(p.overrides && p.overrides[w]) vol = p.overrides[w].vol;   // clinician override wins
     if(cfg.capAtGoal) vol = Math.min(vol, goalTotal);
     const start = new Date(wk0); start.setDate(start.getDate()+(w-1)*7);
+    const volOn = volStream ? itemActive(volStream, w, p.weeks) : true;
     const days  = rel.map((rl,i)=>{
-      const km = vol*rl, key = w+'-'+i, log = p.logs[key] || null;
+      const km = volOn ? vol*rl : 0, key = w+'-'+i, log = p.logs[key] || null;
       const dt = new Date(start); dt.setDate(dt.getDate()+i); dt.setHours(0,0,0,0);
       /* a session's load is its kilometres plus a fixed allowance for any ladder work,
          so strength days carry weight in the score instead of being invisible */
@@ -650,7 +654,7 @@ function computeProgram(p, cfg){
       why = 'Safety stop — a red-flag run overrides the score.';
     }
 
-    let next = vol*mult;
+    let next = volOn ? vol*mult : vol;   // hold the starting distance until the ramp begins
     if(cfg.maxWeeklyStepKm && next-vol > cfg.maxWeeklyStepKm){ next = vol+cfg.maxWeeklyStepKm; why += ' Step capped at '+cfg.maxWeeklyStepKm+' km.'; }
     if(cfg.capAtGoal) next = Math.min(next, goalTotal);
 
@@ -669,7 +673,7 @@ function computeProgram(p, cfg){
       } else { greenBy[it.key] = 0; moves[it.key] = 'hold'; }
     });
 
-    out.push({ w, vol, days, prescribed, logged, missed, score, status, mult, why, flags, start,
+    out.push({ w, vol: volOn ? vol : 0, volOn, days, prescribed, logged, missed, score, status, mult, why, flags, start,
                overridden, atGoal: Math.abs(vol-goalTotal) < 0.05,
                pctGoal: goalTotal ? vol/goalTotal : 0, nextVol: next,
                doses: weekDoses, moves: moves });
@@ -906,7 +910,8 @@ function wPlan(p, prog, wk){
   return '<div class="wgrid">'+
     '<div class="pcard"><h4>Week '+p.cur+'</h4>'+
       '<div class="sm" style="margin-bottom:12px">'+fmtDate(wk.start)+' – '+fmtDate(wk.days[6].date)+' · '+
-      prog.streams.map(function(st){ return st.name; }).join(' + ')+'</div>'+
+      prog.streams.filter(function(st){ return itemActive(st, wk.w, p.weeks); })
+                  .map(function(st){ return st.name; }).join(' + ')+'</div>'+
       wk.days.map(function(d){
         const its = itemsOn(p, prog, wk, d.i);
         if(!its.length) return '<div class="runrow"><div class="dot dot-n"></div><div style="flex:1"><div style="font-weight:600;font-size:13.5px;color:var(--muted)">'+DAYSL[d.i]+' '+fmtDate(d.date)+'</div>'+
@@ -1529,6 +1534,7 @@ function adProtocols(){
 function previewHTML(D, A){
   const goal = 30, N = Math.min(D.weeks, 10);
   const extras = D.streams.filter(function(x){ return x.type !== 'volume'; });
+  const volS   = D.streams.filter(function(x){ return x.type === 'volume'; })[0] || null;
   const doses = {}, greenBy = {};
   extras.forEach(function(it){ doses[it.key] = doseInit(it); greenBy[it.key] = 0; });
   let vol = goal*(1-D.red);
@@ -1538,8 +1544,10 @@ function previewHTML(D, A){
       if(!itemActive(it, w, D.weeks)) return '<span style="color:var(--line)">\u2014</span>';
       return doseText(it, doses[it.key]);
     });
+    const vOn = volS ? itemActive(volS, w, D.weeks) : true;
     rows.push('<tr><td class="mono">'+w+'</td>'+
-      '<td class="mono">'+r1(vol)+' km <span style="color:var(--muted)">('+Math.round(vol/goal*100)+'%)</span></td>'+
+      '<td class="mono">'+(vOn ? r1(vol)+' km <span style="color:var(--muted)">('+Math.round(vol/goal*100)+'%)</span>'
+                               : '<span style="color:var(--line)">—</span>')+'</td>'+
       cells.map(function(c){ return '<td style="font-size:12px">'+c+'</td>'; }).join('')+'</tr>');
     extras.forEach(function(it){
       if(!itemActive(it, w, D.weeks)) return;
@@ -1547,7 +1555,7 @@ function previewHTML(D, A){
       greenBy[it.key]++;
       if(greenBy[it.key] >= need){ greenBy[it.key] = 0; doses[it.key] = doseAdvance(it, doses[it.key], 'up'); }
     });
-    vol = Math.min(goal, vol*(1+D.inc));
+    if(vOn) vol = Math.min(goal, vol*(1+D.inc));
   }
   const toGoal = D.inc>0 ? Math.ceil(Math.log(1/(1-D.red))/Math.log(1+D.inc)) : null;
   return '<div style="overflow-x:auto"><table><thead><tr><th>Week</th><th>Running</th>'+
@@ -1683,9 +1691,10 @@ function protocolEditor(){
           '<textarea class="rungs" data-srungs="'+i+'">'+(st.rungs||[]).join('\n')+'</textarea>'+
           '<div style="font-size:12px;color:var(--muted);margin-top:7px">'+(st.rungs||[]).length+' stages. '+wkTxt+'.</div></div>';
       }).join('')+
-      '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
-        '<button class="btn btn-sm" id="pe-addsets">+ Add sets &amp; reps</button>'+
-        '<button class="btn btn-sm" id="pe-addladder">+ Add staged progression</button></div>'+
+      '<button class="btn btn-sm" id="pe-addladder">+ Add a staged progression</button>'+
+      '<div class="note" style="margin-top:12px">Ramp holds the return to activity. Strength and rehab exercises are '+
+      'deliberately out of scope for now — everything in a plan has to have a progression path, and those are usually '+
+      'progressed on movement quality rather than on a pain score.</div>'+
     '</div></div>'+
 
     '<div class="sect"><div class="sect-h"><span class="sect-n">3</span><div style="flex:1"><h3>What the patient is asked</h3>'+
@@ -1797,11 +1806,6 @@ function protocolEditor(){
     st.days.sort(); render(); }; });
   $$('[data-sdel]').forEach(function(el){ el.onclick = function(){ D.streams.splice(+el.dataset.sdel,1); render(); }; });
 
-  $('#pe-addsets').onclick = function(){
-    D.streams.push({ key:'ex'+(D.streams.length+1), type:'sets', name:'New exercise', days:[0,3], from:1, forWeeks:null, every:1,
-                     start:{sets:3, reps:10, load:0}, prog:{by:2, cap:15, then:'load', thenBy:5} });
-    render();
-  };
   $('#pe-addladder').onclick = function(){
     D.streams.push({ key:'lad'+(D.streams.length+1), type:'ladder', name:'New staged progression', days:[1,4],
                      from:1, forWeeks:null, every:2,
