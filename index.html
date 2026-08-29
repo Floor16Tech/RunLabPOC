@@ -362,6 +362,20 @@ tbody tr.click:hover{background:var(--surface-2)}
    Algorithm ported verbatim from "Return to Running Progression.xlsx"
    with the sheet's known defects fixed behind admin-controlled flags.
    ================================================================== */
+/* every activity is a weekly volume in its own unit */
+const UNITS = {
+  km:    {label:'km',    dp:1, step:8},
+  min:   {label:'min',   dp:0, step:40},
+  m:     {label:'m',     dp:0, step:600},
+  holes: {label:'holes', dp:0, step:9},
+  balls: {label:'balls', dp:0, step:40}
+};
+function fmtVol(v, u){
+  const U = UNITS[u] || UNITS.km;
+  return (U.dp ? r1(v) : Math.round(v)) + ' ' + U.label;
+}
+function unitLabel(u){ return (UNITS[u] || UNITS.km).label; }
+
 const DAYS   = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
 const DAYSL  = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
 const TODAY  = new Date(2026,7,18);                       // demo "now"
@@ -577,6 +591,7 @@ function computeProgram(p, cfg){
   const A         = algoFor(p, cfg);          // scoring + thresholds: the protocol's
   const extras    = extrasOf(p);
   const volStream = streamsOf(p).filter(function(x){ return x.type === 'volume'; })[0] || null;
+  const unit      = (volStream && volStream.unit) || 'km';
   const goalTotal = sum(p.goal);
   const rel       = p.goal.map(g => goalTotal ? g/goalTotal : 0);
   const runDays   = p.goal.map((g,i)=> g>0 ? i : -1).filter(i=>i>=0);
@@ -640,7 +655,7 @@ function computeProgram(p, cfg){
       if(prevMax > 0){
         prescribed.forEach(function(d){
           if(d.km > prevMax * (1 + cfg.maxSessionSpike)){
-            flags.push({sev:'med', txt:DAYSL[d.i]+'’s '+r1(d.km)+' km is '+
+            flags.push({sev:'med', txt:DAYSL[d.i]+'’s '+fmtVol(d.km, unit)+' is '+
               Math.round((d.km/prevMax-1)*100)+'% longer than any session in the last 30 days'});
           }
         });
@@ -672,7 +687,8 @@ function computeProgram(p, cfg){
     }
 
     let next = volOn ? vol*mult : vol;   // hold the starting distance until the ramp begins
-    if(cfg.maxWeeklyStepKm && next-vol > cfg.maxWeeklyStepKm){ next = vol+cfg.maxWeeklyStepKm; why += ' Step capped at '+cfg.maxWeeklyStepKm+' km.'; }
+    const stepCap = (UNITS[unit] || UNITS.km).step;
+    if(stepCap && next-vol > stepCap){ next = vol+stepCap; why += ' Step capped at '+fmtVol(stepCap, unit)+'.'; }
     if(cfg.capAtGoal) next = Math.min(next, goalTotal);
 
     /* every exercise moves on the same decision, each in its own units */
@@ -697,7 +713,7 @@ function computeProgram(p, cfg){
     vol = next;
   }
   return { goalTotal, rel, runDays, weeks:out, current: out[p.cur-1],
-           protocol: proto, algo: A, streams: streamsOf(p), extras: extras };
+           protocol: proto, algo: A, streams: streamsOf(p), extras: extras, unit: unit };
 }
 
 const STATUS = {
@@ -774,7 +790,7 @@ function dayStrip(p, prog, wk){
     let val;
     if(!items.length) val = 'Rest';
     else if(d.log)    val = '\u2713 done';
-    else if(d.isRun)  val = r1(d.km)+' km';
+    else if(d.isRun)  val = fmtVol(d.km, prog.unit);
     else              val = items[0].name.split(' ')[0];
     const extra = (items.length > 1 && !d.log) ? '<div style="font-size:9px;color:var(--muted);margin-top:2px">+'+(items.length-1)+' more</div>' : '';
     return '<div class="daycell '+cls+'"><div class="dn">'+DAYS[d.i]+'</div><div class="dd">'+fmtDate(d.date)+'</div><div class="dv">'+val+'</div>'+extra+'</div>';
@@ -798,7 +814,7 @@ function wToday(p, prog, wk){
     const lead   = run || items[0];
     const others = items.filter(function(i){ return i !== lead; });
     hero = '<div class="hero"><div><div class="eyebrow">'+when+'</div>'+
-      '<div class="big">'+(run ? r1(run.km)+'<span> km</span>' : lead.name)+'</div>'+
+      '<div class="big">'+(run ? (Math.round(run.km*10)/10)+'<span> '+unitLabel(prog.unit)+'</span>' : lead.name)+'</div>'+
       '<div class="sub">'+
         (run ? 'Easy, conversational pace. Stop the run if pain climbs above 5 out of 10.' : lead.detail)+
         (others.length ? '<br><b>Also today:</b> '+others.map(function(o){ return o.name+' \u2014 '+o.detail; }).join('; ') : '')+
@@ -880,14 +896,14 @@ function wProgress(p, prog, wk){
   const tile = function(k,v,d){ return '<div class="card stat"><div class="k">'+k+'</div><div class="v">'+v+'</div><div class="d">'+d+'</div></div>'; };
 
   return '<div class="wstats">'+
-      tile('This week', r1(wk.vol)+' km', 'across '+totN+' runs')+
-      tile('Of your goal', pct(wk.pctGoal)+'%', 'goal is '+prog.goalTotal+' km per week')+
+      tile('This week', fmtVol(wk.vol, prog.unit), 'across '+totN+' sessions')+
+      tile('Of your goal', pct(wk.pctGoal)+'%', 'goal is '+fmtVol(prog.goalTotal, prog.unit)+' per week')+
       tile('Weeks completed', graded.length, 'since '+p.since)+
-      tile('Distance logged', r1(totalKm)+' km', 'total across the programme')+
+      tile('Volume logged', fmtVol(totalKm, prog.unit), 'total across the programme')+
     '</div>'+
 
     '<div class="wgrid">'+
-      '<div class="pcard"><h4>Your weekly volume</h4><div class="sm" style="margin-bottom:14px">Each bar is one week. The dashed line is your goal of '+prog.goalTotal+' km.</div>'+
+      '<div class="pcard"><h4>Your weekly volume</h4><div class="sm" style="margin-bottom:14px">Each bar is one week. The dashed line is your goal of '+fmtVol(prog.goalTotal, prog.unit)+'.</div>'+
         '<div class="bar-wrap" style="height:170px;position:relative">'+
           '<div style="position:absolute;left:0;right:0;bottom:'+(17+ (prog.goalTotal/scale)*145)+'px;border-top:1.5px dashed #a1a1aa;pointer-events:none"></div>'+
           prog.weeks.map(function(w){
@@ -915,7 +931,7 @@ function wProgress(p, prog, wk){
           (graded.length ? graded.slice(-6).map(function(w){
             const words = {green:'Comfortable', yellow:'Manageable', red:'Sore', flag:'Too sore'}[w.status];
             return '<div class="runrow"><div class="dot '+STATUS[w.status].dot+'"></div>'+
-              '<div style="flex:1;min-width:0"><div style="font-weight:640;font-size:13.5px">Week '+w.w+' · '+r1(w.vol)+' km</div>'+
+              '<div style="flex:1;min-width:0"><div style="font-weight:640;font-size:13.5px">Week '+w.w+' · '+fmtVol(w.vol, prog.unit)+'</div>'+
               '<div class="sm">'+w.logged.length+' of '+w.prescribed.length+' runs logged</div></div>'+
               '<span class="pill '+STATUS[w.status].cls+'">'+words+'</span></div>';
           }).join('') : '<div class="sm">Nothing to show yet — this fills in once you finish your first week.</div>')+
@@ -937,7 +953,7 @@ function wPlan(p, prog, wk){
           '<div style="flex:1"><div style="font-weight:640;font-size:13.5px">'+DAYSL[d.i]+' '+fmtDate(d.date)+(d.log?' · logged':'')+'</div>'+
           its.map(function(it){
             return '<div class="sm">'+(it.type==='volume'
-              ? '<b>'+r1(it.km)+' km</b> easy run'
+              ? '<b>'+fmtVol(it.km, prog.unit)+'</b> easy session'
               : '<b>'+it.name+'</b> — '+it.detail)+'</div>';
           }).join('')+'</div></div>';
       }).join('') +'</div>'+
@@ -950,7 +966,7 @@ function wPlan(p, prog, wk){
           '<div class="sm">It is built from how this week actually felt, so there is nothing to see yet.</div></div></div></div>'+
 
       '<div class="pcard"><h4>Your goal</h4><div class="sm" style="margin-bottom:10px">Agreed with Maciek on '+p.since+'</div>'+
-        '<div class="kv"><span class="k">Weekly volume</span><span class="v">'+prog.goalTotal+' km</span></div>'+
+        '<div class="kv"><span class="k">Weekly volume</span><span class="v">'+fmtVol(prog.goalTotal, prog.unit)+'</span></div>'+
         '<div class="kv"><span class="k">Running days</span><span class="v">'+prog.runDays.map(function(i){return DAYS[i];}).join(' · ')+'</span></div>'+
         '<div class="kv"><span class="k">Programme length</span><span class="v">'+p.weeks+' weeks</span></div>'+
         '<div class="kv"><span class="k">Presentation</span><span class="v">'+p.injury+'</span></div></div>'+
@@ -1157,7 +1173,7 @@ function renderClinician(){
         const wk  = r.prog.current;
         const detail = r.att.rank===0
           ? wk.flags.filter(function(f){return f.sev==='high';}).map(function(f){return f.txt;}).join(' · ')
-          : (r.att.rank===1 ? 'Week '+(r.p.cur-1)+' scored '+(r.prog.weeks[r.p.cur-2].score||0).toFixed(3)+' — volume reduced to '+r1(wk.vol)+' km'
+          : (r.att.rank===1 ? 'Week '+(r.p.cur-1)+' scored '+(r.prog.weeks[r.p.cur-2].score||0).toFixed(3)+' — volume reduced to '+fmtVol(wk.vol, r.prog.unit)
                             : wk.missed.map(function(d){return DAYSL[d.i];}).join(', ')+' not logged');
         return '<div class="flagbox note '+sev+'" style="margin-bottom:8px">'+
           '<div class="avatar" style="background:'+r.p.colour+';width:26px;height:26px;font-size:10px;flex:0 0 26px">'+initials(r.p.name)+'</div>'+
@@ -1178,7 +1194,7 @@ function renderClinician(){
           '<td data-label="Presentation" style="font-size:12.5px;color:var(--ink-2)">'+r.p.injury+'</td>'+
           '<td data-label="Protocol"><span class="pill pill-n">'+r.prog.protocol.name.split(' — ')[0]+'</span></td>'+
           '<td data-label="Week" class="mono">'+r.p.cur+' / '+r.p.weeks+'</td>'+
-          '<td data-label="Volume" class="mono"><b>'+r1(wk.vol)+'</b> km</td>'+
+          '<td data-label="Volume" class="mono"><b>'+fmtVol(wk.vol, r.prog.unit)+'</b></td>'+
           '<td data-label="% of goal"><div style="display:flex;align-items:center;gap:7px;min-width:130px"><div style="flex:1;height:6px;background:var(--surface-2);border-radius:99px;overflow:hidden;min-width:52px">'+
             '<div style="height:100%;width:'+pct(wk.pctGoal)+'%;background:'+(wk.atGoal?'var(--blue)':'var(--accent)')+'"></div></div>'+
             '<span class="mono" style="font-size:12px">'+pct(wk.pctGoal)+'%</span></div></td>'+
@@ -1214,13 +1230,13 @@ function renderPatientDetail(){
     '</div>'+
 
     '<div class="grid sgrid" style="margin-bottom:18px">'+
-      statTile('Week '+p.cur+' volume', r1(wk.vol)+' km', pct(wk.pctGoal)+'% of the '+prog.goalTotal+' km goal') +
+      statTile('Week '+p.cur+' volume', fmtVol(wk.vol, prog.unit), pct(wk.pctGoal)+'% of the '+fmtVol(prog.goalTotal, prog.unit)+' goal') +
       statTile('Runs logged', wk.logged.length+' / '+wk.prescribed.length, 'this week') +
       statTile('Last week score', prev && prev.score!==null ? prev.score.toFixed(3) : '—',
                prev ? prev.why : 'no completed week yet',
                prev ? STATUS[prev.status].col : '') +
-      statTile('Next week', prev||wk ? r1(wk.nextVol)+' km' : '—',
-               wk.nextVol>wk.vol ? '+'+r1(wk.nextVol-wk.vol)+' km' : (wk.nextVol<wk.vol ? r1(wk.nextVol-wk.vol)+' km' : 'held')) +
+      statTile('Next week', prev||wk ? fmtVol(wk.nextVol, prog.unit) : '—',
+               wk.nextVol>wk.vol ? '+'+fmtVol(wk.nextVol-wk.vol, prog.unit) : (wk.nextVol<wk.vol ? '-'+fmtVol(wk.vol-wk.nextVol, prog.unit) : 'held')) +
     '</div>'+
 
     (wk.flags.length ? '<div class="card" style="margin-bottom:18px"><div class="card-h"><h3>Flags this week</h3>'+
@@ -1258,7 +1274,7 @@ function weekTable(p, prog){
       let row = '<tr class="click" data-week="'+w.w+'"'+(w.w===p.cur?' style="background:var(--accent-soft)"':'')+'>'+
         '<td><b class="mono">'+w.w+'</b>'+(w.w===p.cur?' <span class="tag" style="background:var(--accent);color:#fff">now</span>':'')+'</td>'+
         '<td style="font-size:12px;color:var(--muted);white-space:nowrap">'+fmtDate(w.start)+'</td>'+
-        '<td class="mono"><b>'+r1(w.vol)+'</b> km'+(w.atGoal?' <span class="tag" style="background:var(--blue-soft);color:var(--blue)">goal</span>':'')+
+        '<td class="mono"><b>'+fmtVol(w.vol, prog.unit)+'</b>'+(w.atGoal?' <span class="tag" style="background:var(--blue-soft);color:var(--blue)">goal</span>':'')+
           (ov?' <span class="tag" style="background:var(--amber-soft);color:var(--amber)">manual</span>':'')+'</td>'+
         (prog.extras.length ? '<td style="font-size:11.5px">'+
             prog.extras.filter(function(it){ return itemActive(it, w.w, p.weeks); }).map(function(it){
@@ -1270,7 +1286,7 @@ function weekTable(p, prog){
         '<td class="mono" style="font-size:12.5px">'+w.logged.length+'/'+w.prescribed.length+'</td>'+
         '<td class="mono">'+(w.score!==null ? '<b>'+w.score.toFixed(3)+'</b>' : '<span style="color:var(--muted)">—</span>')+'</td>'+
         '<td><span class="pill '+st.cls+'"><span class="dot '+st.dot+'"></span>'+st.lbl+'</span></td>'+
-        '<td class="mono" style="font-size:12.5px">'+(w.status==='future'?'<span style="color:var(--muted)">'+r1(w.nextVol)+'</span>':'×'+w.mult.toFixed(2)+' → '+r1(w.nextVol))+'</td>'+
+        '<td class="mono" style="font-size:12.5px">'+(w.status==='future'?'<span style="color:var(--muted)">'+fmtVol(w.nextVol, prog.unit)+'</span>':'×'+w.mult.toFixed(2)+' → '+fmtVol(w.nextVol, prog.unit))+'</td>'+
         '<td style="text-align:right"><button class="btn btn-sm" data-override="'+w.w+'">Override</button></td></tr>';
 
       if(open){
@@ -1289,7 +1305,7 @@ function weekTable(p, prog){
             }).join('<br>');
             return '<tr><td><b>'+DAYSL[d.i]+'</b><br><span style="font-size:11px;color:var(--muted)">'+fmtDate(d.date)+'</span></td>'+
               '<td style="font-size:12px">'+its.map(function(it){
-                return it.type==='volume' ? '<b>'+r1(it.km)+' km</b>' : it.name+' · step '+(it.level+1);
+                return it.type==='volume' ? '<b>'+fmtVol(it.km, prog.unit)+'</b>' : it.name+' · step '+(it.level+1);
               }).join('<br>')+'</td>'+
               '<td style="font-size:11.5px;color:var(--ink-2)">'+(d.log ? dnTxt : '—')+'</td>'+
               (d.log
@@ -1307,7 +1323,7 @@ function weekTable(p, prog){
 function builderCard(p, prog){
   return '<div class="card" style="margin-bottom:16px"><div class="card-h"><h3>Programme</h3>'+
     '<span class="hint">edit live — everything recalculates</span></div><div class="card-b">'+
-    '<span class="lbl">Goal volume per day (km)</span>'+
+    '<span class="lbl">Goal per day</span>'+
     '<div style="display:flex;gap:5px;margin-bottom:14px">'+ DAYS.map(function(d,i){
       return '<div style="flex:1;text-align:center"><div style="font-size:10px;color:var(--muted);font-weight:700;margin-bottom:3px">'+d+'</div>'+
         '<input type="number" min="0" step="0.5" value="'+p.goal[i]+'" data-goal="'+i+'" style="width:100%;padding:7px 2px;text-align:center;border:1px solid var(--line);border-radius:7px;font-weight:600"></div>';
@@ -1319,7 +1335,7 @@ function builderCard(p, prog){
       '<label class="field" style="margin:0"><span class="lbl">Programme weeks</span><input type="number" min="2" max="26" step="1" value="'+p.weeks+'" data-set="weeks"></label>'+
       '<label class="field" style="margin:0"><span class="lbl">Currently in week</span><input type="number" min="1" max="'+p.weeks+'" step="1" value="'+p.cur+'" data-set="cur"></label>'+
     '</div>'+
-    '<div class="note" style="margin-top:6px">Week 1 = '+prog.goalTotal+' × (1 − '+pct(p.red)+'%) = <b>'+r1(prog.weeks[0].vol)+' km</b>. '+
+    '<div class="note" style="margin-top:6px">Week 1 = '+fmtVol(prog.goalTotal, prog.unit)+' × (1 − '+pct(p.red)+'%) = <b>'+fmtVol(prog.weeks[0].vol, prog.unit)+'</b>. '+
     'At '+pct(p.inc)+'% per green week, the goal is reached in <b>'+weeksToGoal(p)+' consecutive green weeks</b>.</div>'+
     '</div></div>';
 }
@@ -1359,7 +1375,7 @@ function mathsCard(p, prog){
     '<span class="lbl">What the patient does</span>'+
     prog.streams.map(function(st){
       if(st.type==='volume') return '<div class="kv"><span class="k">'+st.name+'</span>'+
-        '<span class="v">'+prog.goalTotal+' km goal \u00b7 +'+pct(p.inc)+'% per green week</span></div>';
+        '<span class="v">'+fmtVol(prog.goalTotal, prog.unit)+' goal \u00b7 +'+pct(p.inc)+'% per green week</span></div>';
       const dose = prog.current.doses[st.key];
       const need = st.every || (st.type==='ladder' ? (A.dwell||2) : 1);
       return '<div class="kv"><span class="k">'+st.name+'</span>'+
@@ -1406,8 +1422,8 @@ function overrideModal(p, w){
     '<div class="modal-h"><div style="flex:1"><div style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:650">Week '+w+'</div>'+
       '<h3 style="font-size:16px;margin-top:2px">Override the algorithm</h3></div></div>'+
     '<div class="modal-b">'+
-      '<div class="note" style="margin-bottom:14px">The algorithm prescribed <b>'+r1(wk.vol)+' km</b>. '+(wk.why||'')+'</div>'+
-      '<label class="field"><span class="lbl">Set weekly volume (km)</span><input type="number" step="0.5" value="'+r1(wk.vol)+'" id="ovVal"></label>'+
+      '<div class="note" style="margin-bottom:14px">Ramp prescribed <b>'+fmtVol(wk.vol, prog.unit)+'</b>. '+(wk.why||'')+'</div>'+
+      '<label class="field"><span class="lbl">Set weekly volume ('+unitLabel(prog.unit)+')</span><input type="number" step="0.5" value="'+r1(wk.vol)+'" id="ovVal"></label>'+
       '<label class="field"><span class="lbl">Clinical reason (required — stored in the audit log)</span>'+
         '<select id="ovWhy"><option>Patient reported an unrelated illness</option><option>Race or event in the calendar</option>'+
         '<option>Objective testing supports a faster ramp</option><option>Symptoms worse than the score suggests</option>'+
@@ -1433,7 +1449,7 @@ function newProgrammeModal(){
       '<label class="field"><span class="lbl">Protocol template</span><select>'+
         PROTOCOLS.map(function(x){return '<option>'+x.name+'</option>';}).join('')+'</select></label>'+
       '<div class="note" style="margin-bottom:14px">Choosing a template pre-fills the starting reduction, weekly increase and programme length. You still agree the goal volume and running days with the patient.</div>'+
-      '<span class="lbl">Goal volume per day (km)</span>'+
+      '<span class="lbl">Goal per day</span>'+
       '<div style="display:flex;gap:5px;margin-bottom:14px">'+DAYS.map(function(d){
         return '<div style="flex:1;text-align:center"><div style="font-size:10px;color:var(--muted);font-weight:700;margin-bottom:3px">'+d+'</div>'+
         '<input type="number" value="0" style="width:100%;padding:7px 2px;text-align:center;border:1px solid var(--line);border-radius:7px"></div>';
@@ -1559,6 +1575,7 @@ function previewHTML(D, A){
   const goal = 30, N = Math.min(D.weeks, 10);
   const extras = D.streams.filter(function(x){ return x.type !== 'volume'; });
   const volS   = D.streams.filter(function(x){ return x.type === 'volume'; })[0] || null;
+  const u      = (volS && volS.unit) || 'km';
   const doses = {}, greenBy = {};
   extras.forEach(function(it){ doses[it.key] = doseInit(it); greenBy[it.key] = 0; });
   let vol = goal*(1-D.red);
@@ -1570,7 +1587,7 @@ function previewHTML(D, A){
     });
     const vOn = volS ? itemActive(volS, w, D.weeks) : true;
     rows.push('<tr><td class="mono">'+w+'</td>'+
-      '<td class="mono">'+(vOn ? r1(vol)+' km <span style="color:var(--muted)">('+Math.round(vol/goal*100)+'%)</span>'
+      '<td class="mono">'+(vOn ? fmtVol(vol, u)+' <span style="color:var(--muted)">('+Math.round(vol/goal*100)+'%)</span>'
                                : '<span style="color:var(--line)">—</span>')+'</td>'+
       cells.map(function(c){ return '<td style="font-size:12px">'+c+'</td>'; }).join('')+'</tr>');
     extras.forEach(function(it){
@@ -1659,7 +1676,7 @@ function protocolEditor(){
         if(st.type === 'volume'){
           return '<div class="streamcard"><div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">'+
             '<span class="pill pill-b">Distance</span><b style="font-size:13.5px">'+st.name+'</b>'+
-            '<span class="spacer"></span><span style="font-size:11.5px;color:var(--muted)">goal and running days are set per patient</span></div>'+
+            '<span class="spacer"></span><span style="font-size:11.5px;color:var(--muted)">measured in '+unitLabel(st.unit||'km')+', goal and days set per patient</span></div>'+
             '<span class="lbl">Start at this much of their goal distance</span>'+
             '<div class="slrow" style="margin-bottom:16px"><input type="range" class="slider" id="pe-red-sl" min="10" max="90" step="5" value="'+Math.round((1-D.red)*100)+'">'+
               '<span class="slval" id="pe-red-out">'+Math.round((1-D.red)*100)+'%</span></div>'+
@@ -1770,7 +1787,7 @@ function protocolEditor(){
     '</div></div>'+
 
     '<div class="sect"><div class="sect-h"><span class="sect-n">5</span><div style="flex:1"><h3>What this builds</h3>'+
-      '<div class="sh">A 30 km goal with every week graded green \u2014 move a slider and watch it change</div></div></div>'+
+      '<div class="sh">A nominal 30-unit goal with every week graded green \u2014 move a slider and watch it change</div></div></div>'+
       '<div class="sect-b" id="pe-preview">'+previewHTML(D, A)+'</div></div>'+
 
     '</div></div>';
