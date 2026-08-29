@@ -244,6 +244,12 @@ tbody tr.click:hover{background:var(--surface-2)}
 .sect-h h3{font-size:14.5px}
 .sect-h .sh{font-size:11.5px;color:var(--muted)}
 .sect-b{padding:18px}
+.slider{-webkit-appearance:none;appearance:none;width:100%;height:6px;border-radius:99px;background:var(--line);outline:none}
+.slider::-webkit-slider-thumb{-webkit-appearance:none;width:22px;height:22px;border-radius:99px;background:var(--accent);cursor:pointer;box-shadow:0 2px 7px rgba(0,0,0,.28)}
+.slider::-moz-range-thumb{width:22px;height:22px;border:0;border-radius:99px;background:var(--accent);cursor:pointer}
+.slrow{display:flex;align-items:center;gap:13px}
+.slval{font-weight:700;font-size:15px;min-width:64px;text-align:right;font-variant-numeric:tabular-nums}
+.itemgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(88px,1fr));gap:9px}
 .streamcard{border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px;background:var(--surface-2)}
 .daypick{display:flex;gap:5px;flex-wrap:wrap}
 .daypick button{padding:7px 0;width:44px;border:1.5px solid var(--line);border-radius:8px;font-size:11.5px;font-weight:650;background:var(--surface);color:var(--muted)}
@@ -390,15 +396,20 @@ const PROTOCOLS = [
    red:0.35, inc:0.10, weeks:12, uses:14,
    note:'Load-tolerant tissue. The next morning matters more than pain during the run.',
    algo:{ wDuring:0.30, wAfter:0.50, wBaseline:0.20, painStep:0.025,
-          greenAt:0.91, yellowAt:0.90, deload:0.10, dwell:2, ladderLoad:4, flagPainDuring:7, flagPainAfter:5 },
+          greenAt:0.91, yellowAt:0.90, deload:0.10, dwell:2, sessionLoad:4, flagPainDuring:7, flagPainAfter:5 },
    streams:[
      {key:'run',  type:'volume', name:'Running', unit:'km'},
-     {key:'calf', type:'ladder', name:'Calf loading', days:[0,3,5], rungs:[
-        'Double-leg calf raise, bodyweight, 3\u00d715',
-        'Double-leg calf raise, 3s lower, 3\u00d712',
-        'Single-leg calf raise, bodyweight, 3\u00d712',
-        'Single-leg calf raise + 10 kg, 3\u00d710',
-        'Single-leg hop, 3\u00d710']}
+     {key:'calf', type:'sets', name:'Calf raise', days:[0,3,5], from:1, forWeeks:null, every:1,
+      start:{sets:3, reps:10, load:0},
+      prog:{by:2, cap:15, then:'load', thenBy:5}},
+     {key:'sol', type:'sets', name:'Bent-knee soleus raise', days:[0,3], from:1, forWeeks:8, every:1,
+      start:{sets:3, reps:12, load:0},
+      prog:{by:2, cap:18, then:'set', thenBy:1}},
+     {key:'hop', type:'ladder', name:'Hopping progression', days:[5], from:5, forWeeks:null, every:2,
+      rungs:['Two-foot hop in place, 3\u00d710',
+             'Two-foot hop forward, 3\u00d710',
+             'Single-leg hop in place, 3\u00d78',
+             'Single-leg hop forward, 3\u00d78']}
    ]},
 
   {id:'bone', name:'Bone stress injury \u2014 cautious', region:'Tibia / metatarsal',
@@ -419,10 +430,13 @@ const PROTOCOLS = [
    red:0.35, inc:0.15, weeks:10, uses:9,
    note:'Hop-test clearance before week 1. Court exposure climbs only on clean weeks.',
    algo:{ wDuring:0.35, wAfter:0.35, wBaseline:0.30, painStep:0.03,
-          greenAt:0.92, yellowAt:0.90, deload:0.10, dwell:2, ladderLoad:5, flagPainDuring:6, flagPainAfter:4 },
+          greenAt:0.92, yellowAt:0.90, deload:0.10, dwell:2, sessionLoad:5, flagPainDuring:6, flagPainAfter:4 },
    streams:[
      {key:'run',   type:'volume', name:'Running', unit:'km'},
-     {key:'court', type:'ladder', name:'Return to court', days:[1,4], rungs:[
+     {key:'quad', type:'sets', name:'Leg press', days:[1,4], from:1, forWeeks:null, every:1,
+      start:{sets:3, reps:8, load:40},
+      prog:{by:2, cap:12, then:'load', thenBy:10}},
+     {key:'court', type:'ladder', name:'Return to court', days:[1,4], from:2, forWeeks:null, every:2, rungs:[
         'Individual drills, no ball',
         'Individual drills with ball',
         'Non-contact team drills',
@@ -512,12 +526,48 @@ function streamsOf(p){
   const pr = protocolOf(p);
   return (pr && pr.streams) ? pr.streams : [{key:'run', type:'volume', name:'Running', unit:'km'}];
 }
-function laddersOf(p){ return streamsOf(p).filter(function(x){ return x.type==='ladder'; }); }
+function extrasOf(p){ return streamsOf(p).filter(function(x){ return x.type !== 'volume'; }); }
+function itemActive(it, w, totalWeeks){
+  const from = it.from || 1;
+  const upto = it.forWeeks ? (from + it.forWeeks - 1) : totalWeeks;
+  return w >= from && w <= upto;
+}
+function doseInit(it){
+  if(it.type === 'sets')   return { sets:it.start.sets, reps:it.start.reps, load:it.start.load || 0 };
+  if(it.type === 'ladder') return { rung: it.start && it.start.rung ? it.start.rung : 0 };
+  return {};
+}
+function doseAdvance(it, dose, dir){
+  const d = Object.assign({}, dose);
+  if(it.type === 'sets'){
+    const pr = it.prog || {by:2, cap:15, then:'load', thenBy:5};
+    if(dir === 'up'){
+      d.reps += pr.by;
+      if(d.reps > pr.cap){
+        d.reps = it.start.reps;
+        if(pr.then === 'set') d.sets += (pr.thenBy || 1);
+        else d.load += (pr.thenBy || 5);
+      }
+    } else if(dir === 'down'){
+      d.reps = Math.max(it.start.reps, d.reps - pr.by);
+    }
+  } else if(it.type === 'ladder'){
+    if(dir === 'up')   d.rung = Math.min(it.rungs.length-1, d.rung+1);
+    if(dir === 'down') d.rung = Math.max(0, d.rung-1);
+  }
+  return d;
+}
+function doseText(it, dose){
+  if(!dose) return '';
+  if(it.type === 'sets')   return dose.sets+' \u00d7 '+dose.reps+(dose.load ? ' @ '+dose.load+' kg' : ' bodyweight');
+  if(it.type === 'ladder') return it.rungs[dose.rung || 0];
+  return '';
+}
 
 function computeProgram(p, cfg){
   const proto     = protocolOf(p);
   const A         = algoFor(p, cfg);          // scoring + thresholds: the protocol's
-  const ladders   = laddersOf(p);
+  const extras    = extrasOf(p);
   const goalTotal = sum(p.goal);
   const rel       = p.goal.map(g => goalTotal ? g/goalTotal : 0);
   const runDays   = p.goal.map((g,i)=> g>0 ? i : -1).filter(i=>i>=0);
@@ -525,8 +575,12 @@ function computeProgram(p, cfg){
   const midnight  = new Date(TODAY); midnight.setHours(0,0,0,0);
   const out       = [];
   let vol         = goalTotal * (1 - p.red);
-  const levels    = {}; ladders.forEach(function(L){ levels[L.key] = (p.levels && p.levels[L.key]) || 0; });
-  let greenRun    = 0;
+  const doses     = {}; const greenBy = {};
+  extras.forEach(function(it){
+    doses[it.key] = doseInit(it);
+    if(p.levels && p.levels[it.key] !== undefined && it.type==='ladder') doses[it.key].rung = p.levels[it.key];
+    greenBy[it.key] = 0;
+  });
 
   for(let w=1; w<=p.weeks; w++){
     if(p.overrides && p.overrides[w]) vol = p.overrides[w].vol;   // clinician override wins
@@ -537,9 +591,9 @@ function computeProgram(p, cfg){
       const dt = new Date(start); dt.setDate(dt.getDate()+i); dt.setHours(0,0,0,0);
       /* a session's load is its kilometres plus a fixed allowance for any ladder work,
          so strength days carry weight in the score instead of being invisible */
-      const hasLadder = ladders.some(function(L){ return (L.days||[]).indexOf(i) >= 0; });
-      const load = km + (hasLadder ? (A.ladderLoad || 3) : 0);
-      return { i, key, km, load, hasLadder, log, date:dt, isRun:km>0, isSession: load>0,
+      const hasExtra = extras.some(function(it){ return itemActive(it, w, p.weeks) && (it.days||[]).indexOf(i) >= 0; });
+      const load = km + (hasExtra ? (A.sessionLoad || 3) : 0);
+      return { i, key, km, load, hasExtra, log, date:dt, isRun:km>0, isSession: load>0,
                score: load>0 ? runScore(log,A) : null,
                isPast: dt < midnight, isToday: dt.getTime() === midnight.getTime() };
     });
@@ -596,28 +650,29 @@ function computeProgram(p, cfg){
     if(cfg.maxWeeklyStepKm && next-vol > cfg.maxWeeklyStepKm){ next = vol+cfg.maxWeeklyStepKm; why += ' Step capped at '+cfg.maxWeeklyStepKm+' km.'; }
     if(cfg.capAtGoal) next = Math.min(next, goalTotal);
 
-    /* ladders move on the same decision, in rungs instead of percent */
-    const weekLevels = Object.assign({}, levels);
-    let ladderMove = 'hold';
-    if(status === 'green'){
-      greenRun++;
-      if(greenRun >= (A.dwell || 2)){
-        ladderMove = 'advance'; greenRun = 0;
-        ladders.forEach(function(L){ levels[L.key] = Math.min(L.rungs.length-1, levels[L.key]+1); });
-      }
-    } else if(status === 'red' || status === 'flag'){
-      greenRun = 0; ladderMove = 'regress';
-      ladders.forEach(function(L){ levels[L.key] = Math.max(0, levels[L.key]-1); });
-    } else if(status === 'yellow' || status === 'nodata'){ greenRun = 0; }
+    /* every exercise moves on the same decision, each in its own units */
+    const weekDoses = {}; Object.keys(doses).forEach(function(k){ weekDoses[k] = Object.assign({}, doses[k]); });
+    const moves = {};
+    extras.forEach(function(it){
+      if(!itemActive(it, w, p.weeks)){ moves[it.key] = 'off'; return; }
+      const need = it.every || (it.type === 'ladder' ? (A.dwell || 2) : 1);
+      if(status === 'green'){
+        greenBy[it.key]++;
+        if(greenBy[it.key] >= need){ greenBy[it.key] = 0; doses[it.key] = doseAdvance(it, doses[it.key], 'up'); moves[it.key] = 'advance'; }
+        else moves[it.key] = 'hold';
+      } else if(status === 'red' || status === 'flag'){
+        greenBy[it.key] = 0; doses[it.key] = doseAdvance(it, doses[it.key], 'down'); moves[it.key] = 'regress';
+      } else { greenBy[it.key] = 0; moves[it.key] = 'hold'; }
+    });
 
     out.push({ w, vol, days, prescribed, logged, missed, score, status, mult, why, flags, start,
                overridden, atGoal: Math.abs(vol-goalTotal) < 0.05,
                pctGoal: goalTotal ? vol/goalTotal : 0, nextVol: next,
-               levels: weekLevels, ladderMove: ladderMove, greenRun: greenRun });
+               doses: weekDoses, moves: moves });
     vol = next;
   }
   return { goalTotal, rel, runDays, weeks:out, current: out[p.cur-1],
-           protocol: proto, algo: A, streams: streamsOf(p), ladders: ladders };
+           protocol: proto, algo: A, streams: streamsOf(p), extras: extras };
 }
 
 const STATUS = {
@@ -651,12 +706,12 @@ function itemsOn(p, prog, wk, dayIdx){
   const d = wk.days[dayIdx];
   if(d && d.isRun) items.push({ key:'run', type:'volume', name:'Running',
                                 detail:r1(d.km)+' km easy', km:d.km });
-  prog.ladders.forEach(function(L){
-    if((L.days||[]).indexOf(dayIdx) >= 0){
-      const lvl = wk.levels[L.key] || 0;
-      items.push({ key:L.key, type:'ladder', name:L.name,
-                   detail:L.rungs[lvl], level:lvl, of:L.rungs.length });
-    }
+  prog.extras.forEach(function(it){
+    if(!itemActive(it, wk.w, p.weeks)) return;
+    if((it.days||[]).indexOf(dayIdx) < 0) return;
+    const dose = wk.doses[it.key];
+    items.push({ key:it.key, type:it.type, name:it.name, detail:doseText(it, dose), dose:dose,
+                 level:(dose && dose.rung) || 0, of:(it.rungs||[]).length });
   });
   return items;
 }
@@ -675,7 +730,7 @@ function nextRunOf(prog){
   if(due) return due;
   return wk.prescribed.filter(function(d){ return !d.log; })[0] || null;
 }
-function itemLabel(it){ return it.type==='ladder' ? it.name+' \u00b7 step '+(it.level+1)+' of '+it.of : it.name; }
+function itemLabel(it){ return it.type==='volume' ? it.name : it.name+' \u00b7 '+it.detail; }
 
 const PTABS = [['today','Today','Today'],['week','My progress','Progress'],['plan','My plan','Plan'],
                ['messages','Messages','Messages'],['me','Account','Account']];
@@ -738,7 +793,7 @@ function wToday(p, prog, wk){
   return hero +
     '<div class="pcard"><h4>Your week at a glance</h4><div class="sm" style="margin-bottom:12px">'+
       fmtDate(wk.start)+' \u2013 '+fmtDate(wk.days[6].date)+' \u00b7 '+wk.prescribed.length+' sessions'+
-      (prog.ladders.length ? ' across '+prog.streams.length+' streams' : '')+'</div>'+
+      (prog.extras.length ? ' · '+prog.streams.length+' parts to the plan' : '')+'</div>'+
       dayStrip(p, prog, wk)+'</div>'+
 
     '<div class="wgrid">'+
@@ -765,14 +820,16 @@ function wToday(p, prog, wk){
 
         (msg ? '<div class="pcard"><h4>Why this week looks like this</h4><div class="sm">'+msg+'</div></div>' : '')+
 
-        (prog.ladders.length ? '<div class="pcard"><h4>Where you are up to</h4>'+
-          prog.ladders.map(function(L){
-            const lvl = wk.levels[L.key] || 0;
-            return '<div style="margin-bottom:12px"><div style="font-weight:640;font-size:13px">'+L.name+'</div>'+
-              '<div class="sm" style="margin-bottom:7px">Step '+(lvl+1)+' of '+L.rungs.length+' \u00b7 '+L.rungs[lvl]+'</div>'+
-              '<div style="display:flex;gap:3px">'+L.rungs.map(function(r,i){
-                return '<div style="flex:1;height:6px;border-radius:99px;background:'+(i<=lvl?'var(--accent)':'var(--line)')+'"></div>';
-              }).join('')+'</div></div>';
+        (prog.extras.length ? '<div class="pcard"><h4>Where you are up to</h4>'+
+          prog.extras.filter(function(it){ return itemActive(it, wk.w, p.weeks); }).map(function(it){
+            const dose = wk.doses[it.key];
+            const bar = it.type==='ladder'
+              ? '<div style="display:flex;gap:3px;margin-top:7px">'+it.rungs.map(function(r,i){
+                  return '<div style="flex:1;height:6px;border-radius:99px;background:'+(i<=(dose.rung||0)?'var(--accent)':'var(--line)')+'"></div>';
+                }).join('')+'</div>' : '';
+            return '<div style="margin-bottom:13px"><div style="font-weight:640;font-size:13px">'+it.name+'</div>'+
+              '<div class="sm">'+doseText(it, dose)+
+              (it.type==='ladder' ? ' \u00b7 step '+((dose.rung||0)+1)+' of '+it.rungs.length : '')+'</div>'+bar+'</div>';
           }).join('')+'</div>' : '')+
 
         '<div class="pcard"><h4>The rules we agreed</h4><div class="sm" style="line-height:1.8">'+
@@ -1167,7 +1224,7 @@ function weekTable(p, prog){
   return '<div class="card"><div class="card-h"><h3>Week by week</h3>'+
     '<span class="hint">click a week to see every run</span></div>'+
     '<table><thead><tr><th>Wk</th><th>Dates</th><th>Volume</th>'+
-      (prog.ladders.length ? '<th>'+prog.ladders[0].name+'</th>' : '')+
+      (prog.extras.length ? '<th>Exercises</th>' : '')+
       '<th>Sessions</th><th>Response score</th><th>Decision</th><th>Next</th><th></th></tr></thead><tbody>'+
     prog.weeks.map(function(w){
       const st = STATUS[w.status], open = STATE.openWeek===w.w;
@@ -1177,10 +1234,13 @@ function weekTable(p, prog){
         '<td style="font-size:12px;color:var(--muted);white-space:nowrap">'+fmtDate(w.start)+'</td>'+
         '<td class="mono"><b>'+r1(w.vol)+'</b> km'+(w.atGoal?' <span class="tag" style="background:var(--blue-soft);color:var(--blue)">goal</span>':'')+
           (ov?' <span class="tag" style="background:var(--amber-soft);color:var(--amber)">manual</span>':'')+'</td>'+
-        (prog.ladders.length ? '<td class="mono" style="font-size:12.5px">'+
-            ((w.levels[prog.ladders[0].key]||0)+1)+'/'+prog.ladders[0].rungs.length+
-            (w.ladderMove==='advance' ? ' <span style="color:var(--green)">↑</span>'
-             : w.ladderMove==='regress' ? ' <span style="color:var(--red)">↓</span>' : '')+'</td>' : '')+
+        (prog.extras.length ? '<td style="font-size:11.5px">'+
+            prog.extras.filter(function(it){ return itemActive(it, w.w, p.weeks); }).map(function(it){
+              const mv = w.moves[it.key];
+              return doseText(it, w.doses[it.key])+
+                (mv==='advance' ? ' <span style="color:var(--green)">\u2191</span>'
+                 : mv==='regress' ? ' <span style="color:var(--red)">\u2193</span>' : '');
+            }).join('<br>')+'</td>' : '')+
         '<td class="mono" style="font-size:12.5px">'+w.logged.length+'/'+w.prescribed.length+'</td>'+
         '<td class="mono">'+(w.score!==null ? '<b>'+w.score.toFixed(3)+'</b>' : '<span style="color:var(--muted)">—</span>')+'</td>'+
         '<td><span class="pill '+st.cls+'"><span class="dot '+st.dot+'"></span>'+st.lbl+'</span></td>'+
@@ -1188,7 +1248,7 @@ function weekTable(p, prog){
         '<td style="text-align:right"><button class="btn btn-sm" data-override="'+w.w+'">Override</button></td></tr>';
 
       if(open){
-        row += '<tr><td colspan="'+(prog.ladders.length?9:8)+'" style="background:var(--surface-2);padding:14px 16px">'+
+        row += '<tr><td colspan="'+(prog.extras.length?9:8)+'" style="background:var(--surface-2);padding:14px 16px">'+
           '<div style="font-size:12.5px;color:var(--ink-2);margin-bottom:10px">'+w.why+'</div>'+
           '<table style="background:var(--surface);border:1px solid var(--line);border-radius:9px;overflow:hidden">'+
           '<thead><tr><th>Day</th><th>Session</th><th>Completed</th><th>Pain during</th><th>Pain next am</th><th>Back to baseline</th><th>Score</th><th>Weight</th></tr></thead><tbody>'+
@@ -1274,9 +1334,10 @@ function mathsCard(p, prog){
     prog.streams.map(function(st){
       if(st.type==='volume') return '<div class="kv"><span class="k">'+st.name+'</span>'+
         '<span class="v">'+prog.goalTotal+' km goal \u00b7 +'+pct(p.inc)+'% per green week</span></div>';
-      const lvl = prog.current.levels[st.key] || 0;
+      const dose = prog.current.doses[st.key];
+      const need = st.every || (st.type==='ladder' ? (A.dwell||2) : 1);
       return '<div class="kv"><span class="k">'+st.name+'</span>'+
-        '<span class="v">step '+(lvl+1)+' of '+st.rungs.length+' \u00b7 advances after '+(A.dwell||2)+' green weeks</span></div>';
+        '<span class="v">'+doseText(st, dose)+' \u00b7 steps up every '+need+' green week'+(need>1?'s':'')+'</span></div>';
     }).join('')+
 
     '<span class="lbl" style="margin-top:14px">How answers are weighted</span>'+
@@ -1447,8 +1508,10 @@ function adProtocols(){
           '<td><b>'+x.name+'</b><div style="font-size:11.5px;color:var(--muted);max-width:260px">'+x.note+'</div></td>'+
           '<td style="font-size:12.5px">'+(x.region||'\u2014')+'</td>'+
           '<td style="font-size:12px">'+(x.streams||[]).map(function(st){
-            return st.type==='volume' ? '\u25b8 '+st.name+' (volume)'
-                                      : '\u25b8 '+st.name+' ('+st.rungs.length+'-step ladder)'; }).join('<br>')+'</td>'+
+            if(st.type==='volume') return '▸ '+st.name+' — distance';
+            if(st.type==='sets')   return '▸ '+st.name+' — '+st.start.sets+'×'+st.start.reps;
+            return '▸ '+st.name+' — '+(st.rungs||[]).length+' stages';
+          }).join('<br>')+'</td>'+
           '<td class="mono">'+pct(x.red)+'% off</td>'+
           '<td class="mono">+'+pct(x.inc)+'%</td>'+
           '<td style="font-size:12px">'+lean+'</td>'+
@@ -1456,6 +1519,40 @@ function adProtocols(){
           '<td style="text-align:right"><button class="btn btn-sm" data-proto="'+x.id+'">Edit</button></td></tr>';
       }).join('') +'</tbody></table></div>';
   $$('[data-proto]').forEach(function(b){ b.onclick=function(e){ e.stopPropagation(); STATE.protoEdit=b.dataset.proto; render(); }; });
+}
+
+/* the whole plan, week by week, assuming every week is graded green */
+function previewHTML(D, A){
+  const goal = 30, N = Math.min(D.weeks, 10);
+  const extras = D.streams.filter(function(x){ return x.type !== 'volume'; });
+  const doses = {}, greenBy = {};
+  extras.forEach(function(it){ doses[it.key] = doseInit(it); greenBy[it.key] = 0; });
+  let vol = goal*(1-D.red);
+  const rows = [];
+  for(let w=1; w<=N; w++){
+    const cells = extras.map(function(it){
+      if(!itemActive(it, w, D.weeks)) return '<span style="color:var(--line)">\u2014</span>';
+      return doseText(it, doses[it.key]);
+    });
+    rows.push('<tr><td class="mono">'+w+'</td>'+
+      '<td class="mono">'+r1(vol)+' km <span style="color:var(--muted)">('+Math.round(vol/goal*100)+'%)</span></td>'+
+      cells.map(function(c){ return '<td style="font-size:12px">'+c+'</td>'; }).join('')+'</tr>');
+    extras.forEach(function(it){
+      if(!itemActive(it, w, D.weeks)) return;
+      const need = it.every || (it.type==='ladder' ? (A.dwell||2) : 1);
+      greenBy[it.key]++;
+      if(greenBy[it.key] >= need){ greenBy[it.key] = 0; doses[it.key] = doseAdvance(it, doses[it.key], 'up'); }
+    });
+    vol = Math.min(goal, vol*(1+D.inc));
+  }
+  const toGoal = D.inc>0 ? Math.ceil(Math.log(1/(1-D.red))/Math.log(1+D.inc)) : null;
+  return '<div style="overflow-x:auto"><table><thead><tr><th>Week</th><th>Running</th>'+
+    extras.map(function(it){ return '<th>'+it.name+'</th>'; }).join('')+'</tr></thead><tbody>'+
+    rows.join('')+'</tbody></table></div>'+
+    '<div class="note" style="margin-top:12px">Reaches the goal distance after <b>'+
+      (toGoal===null ? 'never \u2014 no weekly increase set' : toGoal+' green weeks')+'</b> of the '+D.weeks+' available'+
+      (toGoal!==null && toGoal > D.weeks ? ', which is longer than this protocol runs.' : '.')+
+      ' Real programmes hold and deload along the way, so this is the fastest case.</div>';
 }
 
 /* ---------- the protocol builder ---------- */
@@ -1469,7 +1566,7 @@ function protocolEditor(){
                           algo:{}, streams:[{key:'run', type:'volume', name:'Running', unit:'km'}] };
     STATE.protoDraft = {
       __for: STATE.protoEdit,
-      name: base.name, region: base.region || '', note: base.note || '',
+      name: base.name, region: base.region || '', note: base.note || '', painMode: base.painMode || 'session',
       red: base.red, inc: base.inc, weeks: base.weeks,
       algo: Object.assign({}, CFG, base.algo || {}),
       streams: JSON.parse(JSON.stringify(base.streams || []))
@@ -1516,32 +1613,75 @@ function protocolEditor(){
     '<div class="sect"><div class="sect-h"><span class="sect-n">2</span><div style="flex:1"><h3>What the patient does</h3>'+
       '<div class="sh">A volume stream scales by percentage. A ladder moves one step at a time.</div></div></div><div class="sect-b">'+
       D.streams.map(function(st, i){
+        const wkTxt = 'Weeks '+(st.from||1)+'\u2013'+(st.forWeeks ? ((st.from||1)+st.forWeeks-1) : D.weeks);
+        const sched =
+          '<div class="itemgrid" style="margin-bottom:12px">'+
+            '<label><span class="lbl">Start week</span><input type="number" min="1" max="'+D.weeks+'" data-sfrom="'+i+'" value="'+(st.from||1)+'" style="width:100%;padding:8px;border:1px solid var(--line);border-radius:8px"></label>'+
+            '<label><span class="lbl">For how many weeks</span><input type="number" min="1" max="'+D.weeks+'" data-sfor="'+i+'" value="'+(st.forWeeks||'')+'" placeholder="to the end" style="width:100%;padding:8px;border:1px solid var(--line);border-radius:8px"></label>'+
+          '</div>';
+
         if(st.type === 'volume'){
-          return '<div class="streamcard"><div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">'+
-            '<span class="pill pill-b">Volume</span><b style="font-size:13.5px">'+st.name+'</b>'+
-            '<span class="spacer"></span><span style="font-size:11.5px;color:var(--muted)">measured in '+(st.unit||'km')+'</span></div>'+
-            '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'+
-              '<label class="field" style="margin:0"><span class="lbl">Start at this much below goal</span>'+
-                '<input type="number" id="pe-red" min="0" max="90" step="5" value="'+Math.round(D.red*100)+'"></label>'+
-              '<label class="field" style="margin:0"><span class="lbl">Increase per green week</span>'+
-                '<input type="number" id="pe-inc" min="0" max="50" step="1" value="'+Math.round(D.inc*100)+'"></label>'+
-            '</div>'+
-            '<div style="font-size:12px;color:var(--muted);line-height:1.5">The goal distance and which days they run are set per patient, not here.</div></div>';
+          return '<div class="streamcard"><div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">'+
+            '<span class="pill pill-b">Distance</span><b style="font-size:13.5px">'+st.name+'</b>'+
+            '<span class="spacer"></span><span style="font-size:11.5px;color:var(--muted)">goal and running days are set per patient</span></div>'+
+            '<span class="lbl">Start at this much of their goal distance</span>'+
+            '<div class="slrow" style="margin-bottom:16px"><input type="range" class="slider" id="pe-red-sl" min="10" max="90" step="5" value="'+Math.round((1-D.red)*100)+'">'+
+              '<span class="slval" id="pe-red-out">'+Math.round((1-D.red)*100)+'%</span></div>'+
+            '<span class="lbl">Increase per green week</span>'+
+            '<div class="slrow"><input type="range" class="slider" id="pe-inc-sl" min="0" max="30" step="1" value="'+Math.round(D.inc*100)+'">'+
+              '<span class="slval" id="pe-inc-out">+'+Math.round(D.inc*100)+'%</span></div></div>';
         }
-        return '<div class="streamcard"><div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">'+
-          '<span class="pill pill-n">Ladder</span>'+
+
+        if(st.type === 'sets'){
+          const pr = st.prog || {by:2, cap:15, then:'load', thenBy:5};
+          return '<div class="streamcard"><div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">'+
+            '<span class="pill pill-n">Sets &amp; reps</span>'+
+            '<input data-sname="'+i+'" value="'+String(st.name).replace(/"/g,'&quot;')+'" style="flex:1;min-width:0;padding:6px 9px;border:1px solid var(--line);border-radius:8px;font-weight:650">'+
+            '<button class="btn btn-sm" data-sdel="'+i+'">Remove</button></div>'+
+            '<span class="lbl">Days</span>'+
+            '<div class="daypick" style="margin-bottom:14px">'+DAYS.map(function(dn, di){
+              return '<button data-sday="'+i+'-'+di+'" class="'+((st.days||[]).indexOf(di)>=0?'on':'')+'">'+dn+'</button>';
+            }).join('')+'</div>'+
+            sched+
+            '<span class="lbl">Starting prescription</span>'+
+            '<div class="itemgrid" style="margin-bottom:14px">'+
+              '<label><span class="lbl">Sets</span><input type="number" min="1" max="10" data-sstart="'+i+'-sets" value="'+st.start.sets+'" style="width:100%;padding:8px;border:1px solid var(--line);border-radius:8px"></label>'+
+              '<label><span class="lbl">Reps</span><input type="number" min="1" max="50" data-sstart="'+i+'-reps" value="'+st.start.reps+'" style="width:100%;padding:8px;border:1px solid var(--line);border-radius:8px"></label>'+
+              '<label><span class="lbl">Load (kg)</span><input type="number" min="0" max="300" step="2.5" data-sstart="'+i+'-load" value="'+(st.start.load||0)+'" style="width:100%;padding:8px;border:1px solid var(--line);border-radius:8px"></label>'+
+            '</div>'+
+            '<span class="lbl">Add this many reps per green week</span>'+
+            '<div class="slrow" style="margin-bottom:14px"><input type="range" class="slider" data-sby="'+i+'" min="0" max="5" step="1" value="'+pr.by+'">'+
+              '<span class="slval" data-sbyout="'+i+'">+'+pr.by+'</span></div>'+
+            '<div class="itemgrid">'+
+              '<label><span class="lbl">Rep ceiling</span><input type="number" min="1" max="50" data-sprog="'+i+'-cap" value="'+pr.cap+'" style="width:100%;padding:8px;border:1px solid var(--line);border-radius:8px"></label>'+
+              '<label><span class="lbl">Then add</span><select data-sprog="'+i+'-then" style="width:100%;padding:8px;border:1px solid var(--line);border-radius:8px">'+
+                '<option value="load"'+(pr.then==='load'?' selected':'')+'>Load</option>'+
+                '<option value="set"'+(pr.then==='set'?' selected':'')+'>A set</option></select></label>'+
+              '<label><span class="lbl">By</span><input type="number" min="1" max="50" step="1" data-sprog="'+i+'-thenBy" value="'+pr.thenBy+'" style="width:100%;padding:8px;border:1px solid var(--line);border-radius:8px"></label>'+
+            '</div>'+
+            '<div style="font-size:12px;color:var(--muted);margin-top:9px">'+wkTxt+'. Reps climb to '+pr.cap+', then reset and '+
+              (pr.then==='load' ? 'the load goes up '+pr.thenBy+' kg' : 'a set is added')+'.</div></div>';
+        }
+
+        return '<div class="streamcard"><div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">'+
+          '<span class="pill pill-n">Stages</span>'+
           '<input data-sname="'+i+'" value="'+String(st.name).replace(/"/g,'&quot;')+'" style="flex:1;min-width:0;padding:6px 9px;border:1px solid var(--line);border-radius:8px;font-weight:650">'+
           '<button class="btn btn-sm" data-sdel="'+i+'">Remove</button></div>'+
-          '<span class="lbl">Days it is done</span>'+
+          '<span class="lbl">Days</span>'+
           '<div class="daypick" style="margin-bottom:14px">'+DAYS.map(function(dn, di){
             return '<button data-sday="'+i+'-'+di+'" class="'+((st.days||[]).indexOf(di)>=0?'on':'')+'">'+dn+'</button>';
           }).join('')+'</div>'+
-          '<span class="lbl">Steps, easiest first \u2014 one per line</span>'+
+          sched+
+          '<span class="lbl">Green weeks needed per stage</span>'+
+          '<div class="slrow" style="margin-bottom:14px"><input type="range" class="slider" data-severy="'+i+'" min="1" max="4" step="1" value="'+(st.every||2)+'">'+
+            '<span class="slval" data-severyout="'+i+'">'+(st.every||2)+'</span></div>'+
+          '<span class="lbl">Stages, easiest first \u2014 one per line</span>'+
           '<textarea class="rungs" data-srungs="'+i+'">'+(st.rungs||[]).join('\n')+'</textarea>'+
-          '<div style="font-size:12px;color:var(--muted);margin-top:7px">'+(st.rungs||[]).length+' steps. '+
-            'The patient starts on step 1 unless the clinician moves them.</div></div>';
+          '<div style="font-size:12px;color:var(--muted);margin-top:7px">'+(st.rungs||[]).length+' stages. '+wkTxt+'.</div></div>';
       }).join('')+
-      '<button class="btn btn-sm" id="pe-addladder">+ Add a ladder</button>'+
+      '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
+        '<button class="btn btn-sm" id="pe-addsets">+ Add sets &amp; reps</button>'+
+        '<button class="btn btn-sm" id="pe-addladder">+ Add staged progression</button></div>'+
     '</div></div>'+
 
     '<div class="sect"><div class="sect-h"><span class="sect-n">3</span><div style="flex:1"><h3>What the patient is asked</h3>'+
@@ -1551,11 +1691,21 @@ function protocolEditor(){
         '<b>2.</b> Pain during the session <span style="color:var(--muted)">0\u201310</span><br>'+
         '<b>3.</b> Pain the next morning <span style="color:var(--muted)">0\u201310</span><br>'+
         '<b>4.</b> Are symptoms back to normal? <span style="color:var(--muted)">yes / no</span></div>'+
-      '<div class="note" style="margin-top:12px">Fixed on purpose. Twenty seconds is what keeps people logging, and every extra question costs adherence.</div>'+
-      (D.streams.filter(function(x){return x.type==='ladder';}).length
-        ? '<label class="field" style="margin-top:14px;margin-bottom:0"><span class="lbl">How much a ladder session counts, in kilometre-equivalents</span>'+
-          '<input type="number" id="pe-ladderload" min="0" max="20" step="1" value="'+(A.ladderLoad||3)+'" style="max-width:120px">'+
-          '<span style="font-size:12px;color:var(--muted);display:block;margin-top:6px">A strength day has no distance, so it needs a weight to count in the week score alongside runs.</span></label>'
+      '<div class="note" style="margin-top:12px">Asked once per session by default. Twenty seconds is what keeps people logging, and every extra question costs adherence.</div>'+
+      '<label class="field" style="margin-top:14px"><span class="lbl">Who the pain questions are about</span>'+
+        '<select id="pe-painmode">'+
+          '<option value="session"'+(D.painMode!=='item'?' selected':'')+'>The session as a whole \u2014 three questions, once</option>'+
+          '<option value="item"'+(D.painMode==='item'?' selected':'')+'>Each exercise separately \u2014 three questions per item</option>'+
+        '</select>'+
+        '<span style="font-size:12px;color:var(--muted);display:block;margin-top:7px">'+
+          (D.painMode==='item'
+            ? 'Per exercise tells you <b>which</b> movement hurt, at the cost of '+(D.streams.length*3)+' questions on a full day. Worth it when two streams share a day.'
+            : 'Quickest, but if a run and a strength session share a day you cannot tell which caused the pain.')+
+        '</span></label>'+
+      (D.streams.filter(function(x){return x.type!=='volume';}).length
+        ? '<label class="field" style="margin-top:14px;margin-bottom:0"><span class="lbl">How much a strength session counts, in kilometre-equivalents</span>'+
+          '<input type="number" id="pe-sessionload" min="0" max="20" step="1" value="'+(A.sessionLoad||3)+'" style="max-width:120px">'+
+          '<span style="font-size:12px;color:var(--muted);display:block;margin-top:6px">A strength day has no distance, so it needs a weight to count in the week score alongside runs. Set it to 0 to leave strength out of the running decision entirely.</span></label>'
         : '')+
     '</div></div>'+
 
@@ -1581,17 +1731,9 @@ function protocolEditor(){
       '<div style="margin-top:16px">'+matrixPair(A)+'</div>'+
     '</div></div>'+
 
-    '<div class="sect"><div class="sect-h"><span class="sect-n">5</span><div style="flex:1"><h3>What this produces</h3>'+
-      '<div class="sh">A 30 km goal, every week graded green</div></div></div><div class="sect-b">'+
-      '<table><thead><tr><th>Week</th><th>Volume</th>'+(preview.lad?'<th>'+preview.lad.name+'</th>':'')+'</tr></thead><tbody>'+
-      preview.rows.map(function(r){
-        return '<tr><td class="mono">'+r.w+'</td><td class="mono">'+r.pct+'% of goal</td>'+
-          (preview.lad?'<td style="font-size:12px">step '+(r.lvl+1)+' \u00b7 '+preview.lad.rungs[r.lvl]+'</td>':'')+'</tr>';
-      }).join('')+'</tbody></table>'+
-      '<div class="note" style="margin-top:12px">Reaches goal volume after <b>'+
-        (D.inc>0 ? Math.ceil(Math.log(1/(1-D.red))/Math.log(1+D.inc)) : '\u221e')+' green weeks</b> of the '+D.weeks+' available. '+
-        'Real programmes hold and deload along the way, so this is the fastest case.</div>'+
-    '</div></div>'+
+    '<div class="sect"><div class="sect-h"><span class="sect-n">5</span><div style="flex:1"><h3>What this builds</h3>'+
+      '<div class="sh">A 30 km goal with every week graded green \u2014 move a slider and watch it change</div></div></div>'+
+      '<div class="sect-b" id="pe-preview">'+previewHTML(D, A)+'</div></div>'+
 
     '</div></div>';
 
@@ -1603,9 +1745,32 @@ function protocolEditor(){
   txt('pe-region', function(e){ D.region = e.target.value; });
   txt('pe-note',   function(e){ D.note = e.target.value; });
   txt('pe-weeks',  function(e){ D.weeks = Math.max(2, Math.min(26, +e.target.value||2)); render(); });
-  txt('pe-red',    function(e){ D.red = Math.min(0.9, Math.max(0, (+e.target.value||0)/100)); render(); });
-  txt('pe-inc',    function(e){ D.inc = Math.min(0.5, Math.max(0, (+e.target.value||0)/100)); render(); });
-  txt('pe-ladderload', function(e){ A.ladderLoad = Math.max(0, +e.target.value||0); render(); });
+  const repaint = function(){ $('#pe-preview').innerHTML = previewHTML(D, A); };
+  const sl = function(id, out, fmt, set){
+    const el = $('#'+id); if(!el) return;
+    el.oninput = function(){ set(+el.value); $('#'+out).textContent = fmt(+el.value); repaint(); };
+  };
+  sl('pe-red-sl','pe-red-out', function(v){ return v+'%'; },  function(v){ D.red = 1 - v/100; });
+  sl('pe-inc-sl','pe-inc-out', function(v){ return '+'+v+'%'; }, function(v){ D.inc = v/100; });
+  $$('[data-sby]').forEach(function(el){ el.oninput = function(){
+    const it = D.streams[+el.dataset.sby]; it.prog = it.prog || {}; it.prog.by = +el.value;
+    $('[data-sbyout="'+el.dataset.sby+'"]').textContent = '+'+el.value; repaint(); }; });
+  $$('[data-severy]').forEach(function(el){ el.oninput = function(){
+    D.streams[+el.dataset.severy].every = +el.value;
+    $('[data-severyout="'+el.dataset.severy+'"]').textContent = el.value; repaint(); }; });
+  $$('[data-sstart]').forEach(function(el){ el.onchange = function(){
+    const parts = el.dataset.sstart.split('-');
+    D.streams[+parts[0]].start[parts[1]] = +el.value || 0; render(); }; });
+  $$('[data-sprog]').forEach(function(el){ el.onchange = function(){
+    const parts = el.dataset.sprog.split('-'), it = D.streams[+parts[0]];
+    it.prog = it.prog || {};
+    it.prog[parts[1]] = (parts[1]==='then') ? el.value : (+el.value || 0); render(); }; });
+  $$('[data-sfrom]').forEach(function(el){ el.onchange = function(){
+    D.streams[+el.dataset.sfrom].from = Math.max(1, +el.value||1); render(); }; });
+  $$('[data-sfor]').forEach(function(el){ el.onchange = function(){
+    D.streams[+el.dataset.sfor].forWeeks = el.value ? Math.max(1, +el.value) : null; render(); }; });
+  txt('pe-painmode', function(e){ D.painMode = e.target.value; render(); });
+  txt('pe-sessionload', function(e){ A.sessionLoad = Math.max(0, +e.target.value||0); render(); });
 
   ['wDuring','wAfter','wBaseline','painStep','greenAt','yellowAt','deload','dwell','flagPainDuring','flagPainAfter']
     .forEach(function(k){
@@ -1628,9 +1793,15 @@ function protocolEditor(){
     st.days.sort(); render(); }; });
   $$('[data-sdel]').forEach(function(el){ el.onclick = function(){ D.streams.splice(+el.dataset.sdel,1); render(); }; });
 
+  $('#pe-addsets').onclick = function(){
+    D.streams.push({ key:'ex'+(D.streams.length+1), type:'sets', name:'New exercise', days:[0,3], from:1, forWeeks:null, every:1,
+                     start:{sets:3, reps:10, load:0}, prog:{by:2, cap:15, then:'load', thenBy:5} });
+    render();
+  };
   $('#pe-addladder').onclick = function(){
-    D.streams.push({ key:'lad'+(D.streams.length+1), type:'ladder', name:'New ladder', days:[1,4],
-                     rungs:['First step','Second step','Third step'] });
+    D.streams.push({ key:'lad'+(D.streams.length+1), type:'ladder', name:'New staged progression', days:[1,4],
+                     from:1, forWeeks:null, every:2,
+                     rungs:['First stage','Second stage','Third stage'] });
     render();
   };
 
@@ -1643,10 +1814,10 @@ function protocolEditor(){
     if(!D.name){ toast('Give the protocol a name'); $('#pe-name').focus(); return; }
     if(!D.streams.length){ toast('A protocol needs at least one stream'); return; }
     const payload = { name:D.name, region:D.region, note:D.note || 'No guidance set.',
-                      red:D.red, inc:D.inc, weeks:D.weeks,
+                      red:D.red, inc:D.inc, weeks:D.weeks, painMode:D.painMode||'session',
                       algo:{ wDuring:A.wDuring, wAfter:A.wAfter, wBaseline:A.wBaseline, painStep:A.painStep,
                              greenAt:A.greenAt, yellowAt:A.yellowAt, deload:A.deload, dwell:A.dwell,
-                             ladderLoad:A.ladderLoad, flagPainDuring:A.flagPainDuring, flagPainAfter:A.flagPainAfter },
+                             sessionLoad:A.sessionLoad, flagPainDuring:A.flagPainDuring, flagPainAfter:A.flagPainAfter },
                       streams:D.streams };
     if(isNew){ PROTOCOLS.push(Object.assign({id:'x'+(PROTOCOLS.length+1), uses:0}, payload)); toast('Protocol created \u2014 audit logged'); }
     else { Object.assign(src, payload); toast('Protocol saved \u2014 every patient on it is graded the new way from next week'); }
