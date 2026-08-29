@@ -386,7 +386,9 @@ const CFG = {
   flagPainDuring:  7,
   flagPainAfter:   5,
   flagNoBaselineStreak: 2,
-  maxWeeklyStepKm: 8        // FIX: absolute cap on one week's jump
+  maxWeeklyStepKm: 8,       // absolute cap on one week's jump
+  maxSessionSpike: 0.10,    // a single session vs the longest of the last 30 days
+  safeWeeklyIncrease: 0.10  // above this, injury likelihood climbs sharply
 };
 
 /* ---------- reference protocols the administrator maintains ---------- */
@@ -629,6 +631,21 @@ function computeProgram(p, cfg){
         if(streak >= cfg.flagNoBaselineStreak){ flags.push({sev:'med', txt:streak+' runs in a row where symptoms did not settle'}); streak = 0; }
       } else if(d.log) streak = 0;
     });
+    /* the longest single session of the previous 30 days, prescribed or run */
+    if(cfg.maxSessionSpike){
+      let prevMax = 0;
+      out.slice(Math.max(0, out.length-4)).forEach(function(pw){
+        pw.prescribed.forEach(function(d){ if(d.km > prevMax) prevMax = d.km; });
+      });
+      if(prevMax > 0){
+        prescribed.forEach(function(d){
+          if(d.km > prevMax * (1 + cfg.maxSessionSpike)){
+            flags.push({sev:'med', txt:DAYSL[d.i]+'’s '+r1(d.km)+' km is '+
+              Math.round((d.km/prevMax-1)*100)+'% longer than any session in the last 30 days'});
+          }
+        });
+      }
+    }
     if(missed.length) flags.push({sev:'low', txt:missed.length+' session'+(missed.length>1?'s':'')+' not logged'});
     let partials = 0, skips = 0;
     logged.forEach(function(d){
@@ -1531,6 +1548,13 @@ function adProtocols(){
 }
 
 /* the whole plan, week by week, assuming every week is graded green */
+function incWarn(inc){
+  if(inc <= (CFG.safeWeeklyIncrease || 0.10)) return '';
+  return '<div class="note warn" style="margin-top:10px">Weekly increases above 10% are associated with a sharp rise in '+
+    'injury likelihood, from roughly 7.5% below 10% to around 21% above 15%. '+
+    (inc >= 0.15 ? 'At +'+pct(inc)+'% this protocol sits in that band.' : 'At +'+pct(inc)+'% this is above the safer ceiling.')+'</div>';
+}
+
 function previewHTML(D, A){
   const goal = 30, N = Math.min(D.weeks, 10);
   const extras = D.streams.filter(function(x){ return x.type !== 'volume'; });
@@ -1641,7 +1665,8 @@ function protocolEditor(){
               '<span class="slval" id="pe-red-out">'+Math.round((1-D.red)*100)+'%</span></div>'+
             '<span class="lbl">Increase per green week</span>'+
             '<div class="slrow"><input type="range" class="slider" id="pe-inc-sl" min="0" max="30" step="1" value="'+Math.round(D.inc*100)+'">'+
-              '<span class="slval" id="pe-inc-out">+'+Math.round(D.inc*100)+'%</span></div></div>';
+              '<span class="slval" id="pe-inc-out">+'+Math.round(D.inc*100)+'%</span></div>'+
+            '<div id="pe-inc-warn">'+incWarn(D.inc)+'</div></div>';
         }
 
         if(st.type === 'sets'){
@@ -1765,6 +1790,8 @@ function protocolEditor(){
   };
   sl('pe-red-sl','pe-red-out', function(v){ return v+'%'; },  function(v){ D.red = 1 - v/100; });
   sl('pe-inc-sl','pe-inc-out', function(v){ return '+'+v+'%'; }, function(v){ D.inc = v/100; });
+  (function(){ const el=$('#pe-inc-sl'); if(!el) return; const prev = el.oninput;
+    el.oninput = function(e){ prev.call(el, e); $('#pe-inc-warn').innerHTML = incWarn(D.inc); }; })();
   $$('[data-sby]').forEach(function(el){ el.oninput = function(){
     const it = D.streams[+el.dataset.sby]; it.prog = it.prog || {}; it.prog.by = +el.value;
     $('[data-sbyout="'+el.dataset.sby+'"]').textContent = '+'+el.value; repaint(); }; });
