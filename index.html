@@ -271,6 +271,12 @@ tbody tr.click:hover{background:var(--surface-2)}
 .slider::-webkit-slider-thumb{-webkit-appearance:none;width:22px;height:22px;border-radius:99px;background:var(--accent);cursor:pointer;box-shadow:0 2px 7px rgba(0,0,0,.28)}
 .slider::-moz-range-thumb{width:22px;height:22px;border:0;border-radius:99px;background:var(--accent);cursor:pointer}
 .slrow{display:flex;align-items:center;gap:13px}
+.sessbtn{display:inline-block;margin:2px 5px 2px 0;padding:5px 9px;border:1px solid var(--line);border-radius:8px;
+         background:var(--surface);font-size:11.5px;color:var(--muted);white-space:nowrap}
+.sessbtn b{color:var(--ink);font-weight:650}
+.sessbtn:hover{border-color:var(--accent);background:var(--accent-soft)}
+.sessbtn.ov{border-color:var(--amber);background:var(--amber-soft)}
+.sessbtn.ov b{color:var(--amber)}
 .slval{font-weight:700;font-size:15px;min-width:64px;text-align:right;font-variant-numeric:tabular-nums}
 .itemgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(88px,1fr));gap:9px}
 .streamcard{border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px;background:var(--surface-2)}
@@ -318,6 +324,9 @@ tbody tr.click:hover{background:var(--surface-2)}
   .hero > div{width:100%}
   .hero .btn{width:100%;justify-content:center;min-height:52px}
   .dayrow{gap:5px}
+  .bar-wrap{overflow-x:auto;overflow-y:hidden}
+  .bar{min-width:21px}
+  .bar .amt{font-size:9px}
   [data-goal]{min-width:0;font-size:15px;padding:9px 1px}
 
   /* logging a run becomes a bottom sheet with thumb-sized controls */
@@ -593,6 +602,70 @@ const GOAL_PRESETS = {
          {n:'Weekly round',    w:36,  s:18,  d:[2,5,6]}]
 };
 
+/* ==================================================================
+   THE STANDARD LADDER
+
+   Thirty-six rungs, about 11% apart, from a first walk/run session to a
+   marathon peak week. Every rung is a complete, sensible week rather
+   than whatever a compounding percentage happened to produce.
+
+     - frequency grows with volume, not with time
+     - the long run only appears once sessions are continuous
+     - the long run's share shrinks as frequency grows, 40% at three
+       days down to 32% at six, capped at 34 km
+   ================================================================== */
+const LONGSHARE = {1:1, 2:0.55, 3:0.40, 4:0.36, 5:0.33, 6:0.32, 7:0.30};
+function rungDays(v){ return v < 24 ? 3 : v < 45 ? 4 : v < 75 ? 5 : 6; }
+
+const RUNLADDER = (function(){
+  const out = []; let v = 2.3, i = 1;
+  while(v <= 92 && i < 60){
+    const d = rungDays(v);
+    const even = v/d;
+    const isInterval = (even * 6.5) < 20;
+    const lng = isInterval ? even : Math.min(34, LONGSHARE[d]*v);
+    out.push({ rung:i, wk:Math.round(v*10)/10, days:d,
+               lng:Math.round(lng*10)/10,
+               oth:Math.round((d>1 ? (v-lng)/(d-1) : 0)*10)/10,
+               interval:isInterval });
+    v *= 1.11; i++;
+  }
+  return out;
+})();
+const LADDER_TOP = RUNLADDER.length;
+
+function rungAt(n){ return RUNLADDER[Math.max(0, Math.min(LADDER_TOP-1, Math.round(n)-1))]; }
+function rungForVolume(km){
+  let best = 1, bd = Infinity;
+  RUNLADDER.forEach(function(r){ const d = Math.abs(r.wk-km); if(d < bd){ bd = d; best = r.rung; } });
+  return best;
+}
+/* the patient names their preferred days; a rung may want fewer or more.
+   Keep the long day, then spread the rest as evenly as the week allows. */
+const DAY_ORDER = [6,2,4,1,3,5,0];
+function pickDays(prefDays, n, longDay){
+  const pref = (prefDays || []).slice();
+  const ld = (pref.indexOf(longDay) >= 0) ? longDay : (pref.length ? pref[pref.length-1] : 6);
+  const out = [];
+  pref.forEach(function(d){ if(d !== ld && out.length < n-1) out.push(d); });
+  DAY_ORDER.forEach(function(d){ if(d !== ld && out.indexOf(d) < 0 && out.length < n-1) out.push(d); });
+  out.sort(function(a,b){ return a-b; });
+  out.push(ld);
+  return out;
+}
+
+function rungLabel(n){
+  const r = rungAt(n);
+  return 'Rung '+r.rung+' \u00b7 '+fmtVol(r.wk,'km')+' over '+r.days+' days';
+}
+function rungPhase(r){ return r.interval ? 'walk/run' : r.wk < 24 ? 'base' : r.wk < 50 ? 'build' : 'peak'; }
+
+/* how many weeks a given incline needs to climb from one rung to another */
+function weeksToClimb(from, to, inclinePerWeek){
+  if(inclinePerWeek <= 0) return null;
+  return Math.ceil((to - from) / inclinePerWeek);
+}
+
 function injuryByKey(k){ return INJURIES.filter(function(x){ return x.key===k; })[0]; }
 function activityByKey(k){ return ACTIVITIES.filter(function(x){ return x.key===k; })[0]; }
 
@@ -743,6 +816,18 @@ function minSession(weekTotal, days){
   return days && days.length ? weekTotal/days.length : weekTotal;
 }
 
+/* put every existing programme onto the ladder: the rung nearest what they
+   are doing now, climbing toward the rung nearest their goal */
+PATIENTS.forEach(function(p){
+  if(p.startRung === undefined){
+    const wkNow = sum(p.goal) * (1 - p.red);
+    p.startRung = rungForVolume(wkNow);
+    p.goalRung  = rungForVolume(sum(p.goal));
+    p.incline   = 1;
+    p.sessionOverrides = {};
+  }
+});
+
 /* existing programmes carry a per-day array; read the three numbers back out of it */
 PATIENTS.forEach(function(p){
   if(p.goalWeek === undefined){
@@ -845,6 +930,21 @@ function stepCount(it){
   return it.type==='interval' ? (it.steps||[]).length : (it.rungs||[]).length;
 }
 
+/* the rung the patient is on in a given week, given how the weeks went */
+function ladderWalk(p, statuses){
+  const start = p.startRung || 1, inc = (p.incline === undefined ? 1 : p.incline);
+  const top = p.goalRung || LADDER_TOP;
+  const out = []; let pos = start;
+  for(let w = 1; w <= p.weeks; w++){
+    out.push(Math.max(1, Math.min(top, Math.round(pos))));
+    const st = statuses[w-1];
+    if(st === 'red' || st === 'flag') pos = Math.max(start > 1 ? 1 : 1, pos - 1);
+    else if(st === 'green' || st === undefined || st === 'future') pos = Math.min(top, pos + inc);
+    /* yellow, active, nodata hold */
+  }
+  return out;
+}
+
 function computeProgram(p, cfg){
   const proto     = protocolOf(p);
   const A         = algoFor(p, cfg);          // scoring + thresholds: the protocol's
@@ -866,13 +966,51 @@ function computeProgram(p, cfg){
     greenBy[it.key] = 0;
   });
 
+  /* first pass: how the weeks are graded, so the ladder knows where to sit */
+  const useLadder = !!p.startRung;
+  let rungs = null;
+  if(useLadder){
+    const provisional = [];
+    for(let w=1; w<=p.weeks; w++){
+      const pk = w+'-';
+      let anyLog = false, anyBad = false, anyGood = false;
+      Object.keys(p.logs).forEach(function(k){
+        if(k.indexOf(pk) !== 0) return;
+        anyLog = true;
+        const sc = runScore(p.logs[k], A);
+        if(sc < A.yellowAt) anyBad = true; else if(sc >= A.greenAt) anyGood = true;
+      });
+      provisional.push(!anyLog ? (w < p.cur ? 'nodata' : 'future')
+                       : anyBad ? 'red' : anyGood ? 'green' : 'yellow');
+    }
+    rungs = ladderWalk(p, provisional);
+  }
+
   for(let w=1; w<=p.weeks; w++){
+    if(useLadder){
+      const R = rungAt(rungs[w-1]);
+      vol = R.wk;
+    }
     if(p.overrides && p.overrides[w]) vol = p.overrides[w].vol;   // clinician override wins
-    if(cfg.capAtGoal) vol = Math.min(vol, goalTotal);
+    if(!useLadder && cfg.capAtGoal) vol = Math.min(vol, goalTotal);
     const start = new Date(wk0); start.setDate(start.getDate()+(w-1)*7);
     const volOn = volStream ? itemActive(volStream, w, p.weeks) : true;
-    const days  = rel.map((rl,i)=>{
-      const km = volOn ? vol*rl : 0, key = w+'-'+i, log = p.logs[key] || null;
+    /* on the ladder the week's shape comes from the rung, not the goal split */
+    let relW = rel;
+    if(useLadder){
+      const R = rungAt(rungs[w-1]);
+      const dayList = pickDays(p.days || [1,3,5], R.days, p.longDay);
+      relW = [0,0,0,0,0,0,0];
+      const share = R.wk ? R.lng/R.wk : 0;
+      const ld = dayList[dayList.length-1];
+      dayList.forEach(function(d){ relW[d] = (d===ld) ? share : (1-share)/(dayList.length-1 || 1); });
+      if(dayList.length === 1) relW[ld] = 1;
+    }
+    const days  = relW.map((rl,i)=>{
+      const km0 = volOn ? vol*rl : 0;
+      const ov = p.sessionOverrides && p.sessionOverrides[w+'-'+i];
+      const km = (ov !== undefined && ov !== null) ? ov : km0;
+      const key = w+'-'+i, log = p.logs[key] || null;
       const dt = new Date(start); dt.setDate(dt.getDate()+i); dt.setHours(0,0,0,0);
       /* a session's load is its kilometres plus a fixed allowance for any ladder work,
          so strength days carry weight in the score instead of being invisible */
@@ -966,7 +1104,7 @@ function computeProgram(p, cfg){
       } else { greenBy[it.key] = 0; moves[it.key] = 'hold'; }
     });
 
-    out.push({ w, vol: volOn ? vol : 0, volOn, days, prescribed, logged, missed, score, status, mult, why, flags, start,
+    out.push({ w, rung: useLadder ? rungs[w-1] : null, vol: volOn ? vol : 0, volOn, days, prescribed, logged, missed, score, status, mult, why, flags, start,
                overridden, atGoal: Math.abs(vol-goalTotal) < 0.05,
                pctGoal: goalTotal ? vol/goalTotal : 0, nextVol: next,
                doses: weekDoses, moves: moves });
@@ -1528,7 +1666,11 @@ function renderPatientDetail(){
       '</div></div>' : '')+
 
     '<div class="grid dgrid" style="align-items:start">'+
-      '<div>'+ weekTable(p, prog) + '</div>'+
+      '<div>'+
+        '<div class="card" style="margin-bottom:16px"><div class="card-h"><h3>The plan</h3>'+
+          '<span class="hint">click any session to change it</span></div>'+
+          plotTable(p, prog, true)+'</div>'+
+        weekTable(p, prog) + '</div>'+
       '<div>'+ builderCard(p, prog) + volumeChart(p, prog, maxV) + mathsCard(p, prog) + '</div>'+
     '</div>';
 
@@ -1603,12 +1745,9 @@ function builderCard(p, prog){
   return '<div class="card" style="margin-bottom:16px"><div class="card-h"><h3>Programme</h3>'+
     '<span class="hint">edit live — everything recalculates</span></div><div class="card-b">'+
     goalFields(p, prog.unit, 'bd')+
-    rampSliders(p.red, p.inc, prog.goalTotal, prog.unit, 'bd')+
-    '<div id="bd-preview" style="margin-top:14px">'+rampPreview(prog.goalTotal, p.red, p.inc, p.weeks, prog.unit)+'</div>'+
-    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px">'+
-      '<label class="field" style="margin:0"><span class="lbl">Programme weeks</span><input type="number" min="2" max="26" step="1" value="'+p.weeks+'" data-set="weeks"></label>'+
-      '<label class="field" style="margin:0"><span class="lbl">Currently in week</span><input type="number" min="1" max="'+p.weeks+'" step="1" value="'+p.cur+'" data-set="cur"></label>'+
-    '</div>'+
+    ladderControls(p, 'bd')+
+    '<label class="field" style="margin-top:14px;margin-bottom:0"><span class="lbl">Currently in week</span>'+
+      '<input type="number" min="1" max="'+p.weeks+'" step="1" value="'+p.cur+'" data-set="cur" style="max-width:120px"></label>'+
     '</div></div>';
 }
 
@@ -1665,6 +1804,64 @@ function goalFields(p, unit, pre){
             : '')
         : 'Pick at least one training day.')+
     '</div>';
+}
+
+/* start, timeframe, incline. Any two fix the third, so the incline slider
+   reports the consequence rather than pretending to be independent. */
+function ladderControls(p, pre){
+  const start = p.startRung || 1, goal = p.goalRung || LADDER_TOP;
+  const inc = (p.incline === undefined) ? 1 : p.incline;
+  const need = weeksToClimb(start, goal, inc);
+  const verdict = inc <= 0
+    ? 'No climb set, the plan stays where it starts.'
+    : (need === null ? ''
+      : (need <= p.weeks
+          ? 'Reaches the goal at <b>week '+(need+1)+'</b> of '+p.weeks+'.'
+          : '<b>Falls '+Math.max(0, goal - Math.round(start + inc*(p.weeks-1)))+' rungs short</b> in '+p.weeks+' weeks. '+
+            'Needs '+(need+1)+' weeks at this incline.'));
+  return '<span class="lbl">Where they start</span>'+
+    '<div class="slrow" style="margin-bottom:5px">'+
+      '<input type="range" class="slider" id="'+pre+'-start" min="1" max="'+LADDER_TOP+'" step="1" value="'+start+'">'+
+      '<span class="slval" id="'+pre+'-start-out">'+fmtVol(rungAt(start).wk,'km')+'</span></div>'+
+    '<div style="font-size:11.5px;color:var(--muted);margin-bottom:16px" id="'+pre+'-start-sub">'+
+      'Rung '+start+' of '+LADDER_TOP+' \u00b7 '+rungAt(start).days+' days \u00b7 '+rungPhase(rungAt(start))+'</div>'+
+
+    '<span class="lbl">Where they are going</span>'+
+    '<div class="slrow" style="margin-bottom:5px">'+
+      '<input type="range" class="slider" id="'+pre+'-goal" min="1" max="'+LADDER_TOP+'" step="1" value="'+goal+'">'+
+      '<span class="slval" id="'+pre+'-goal-out">'+fmtVol(rungAt(goal).wk,'km')+'</span></div>'+
+    '<div style="font-size:11.5px;color:var(--muted);margin-bottom:16px" id="'+pre+'-goal-sub">'+
+      'Rung '+goal+' \u00b7 '+rungAt(goal).days+' days \u00b7 '+fmtVol(rungAt(goal).lng,'km')+' long session</div>'+
+
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">'+
+      '<label class="field" style="margin:0"><span class="lbl">Over how many weeks</span>'+
+        '<input type="number" id="'+pre+'-weeks" min="2" max="52" value="'+p.weeks+'"></label>'+
+      '<div><span class="lbl">Rungs climbed per good week</span>'+
+        '<div class="slrow"><input type="range" class="slider" id="'+pre+'-inc" min="0" max="8" step="1" value="'+Math.round(inc*4)+'">'+
+        '<span class="slval" id="'+pre+'-inc-out">'+inc.toFixed(2).replace(/0$/,'')+'</span></div></div>'+
+    '</div>'+
+    '<div class="note" id="'+pre+'-verdict">'+verdict+'</div>';
+}
+
+/* the whole programme plotted out, one row per week */
+function plotTable(p, prog, editable){
+  return '<div style="overflow-x:auto"><table><thead><tr><th>Wk</th><th>Rung</th><th>Week</th><th>Days</th>'+
+    '<th>Sessions</th></tr></thead><tbody>'+
+    prog.weeks.map(function(w){
+      const cells = w.prescribed.map(function(d){
+        const ov = p.sessionOverrides && p.sessionOverrides[w.w+'-'+d.i] !== undefined;
+        const rx = sessionPrescription(d.km, prog.unit, prog.pace, prog.continuousAt);
+        return '<button class="sessbtn'+(ov?' ov':'')+'" data-sess="'+w.w+'-'+d.i+'">'+
+          DAYS[d.i]+' <b>'+(rx ? rx.text : fmtVol(d.km, prog.unit))+'</b></button>';
+      }).join('');
+      const st = STATUS[w.status];
+      return '<tr'+(w.w===p.cur?' style="background:var(--accent-soft)"':'')+'>'+
+        '<td class="mono"><b>'+w.w+'</b></td>'+
+        '<td class="mono" style="font-size:12px">'+(w.rung||'')+'</td>'+
+        '<td class="mono">'+fmtVol(w.vol, prog.unit)+'</td>'+
+        '<td class="mono" style="font-size:12px">'+w.prescribed.length+'</td>'+
+        '<td>'+cells+'</td></tr>';
+    }).join('') +'</tbody></table></div>';
 }
 
 /* the two decisions a physiotherapist makes in the room */
@@ -1764,6 +1961,29 @@ function bindBuilder(p){
     is.oninput  = function(){ repaint(1 - rs.value/100, +is.value/100); };
     is.onchange = function(){ p.inc = +is.value/100; render(); };
   }
+  const rst = $('#bd-start'), rgl = $('#bd-goal'), rin = $('#bd-inc'), rwk = $('#bd-weeks');
+  const paintLadder = function(){
+    const st = +rst.value, gl = +rgl.value, ic = (+rin.value)/4, wks = Math.max(2, +rwk.value||12);
+    $('#bd-start-out').textContent = fmtVol(rungAt(st).wk,'km');
+    $('#bd-start-sub').textContent = 'Rung '+st+' of '+LADDER_TOP+' \u00b7 '+rungAt(st).days+' days \u00b7 '+rungPhase(rungAt(st));
+    $('#bd-goal-out').textContent = fmtVol(rungAt(gl).wk,'km');
+    $('#bd-goal-sub').textContent = 'Rung '+gl+' \u00b7 '+rungAt(gl).days+' days \u00b7 '+fmtVol(rungAt(gl).lng,'km')+' long session';
+    $('#bd-inc-out').textContent = ic.toFixed(2).replace(/0$/,'');
+    const need = weeksToClimb(st, gl, ic);
+    $('#bd-verdict').innerHTML = ic <= 0 ? 'No climb set, the plan stays where it starts.'
+      : (need <= wks ? 'Reaches the goal at <b>week '+(need+1)+'</b> of '+wks+'.'
+                     : '<b>Falls '+Math.max(0, gl - Math.round(st + ic*(wks-1)))+' rungs short</b> in '+wks+' weeks. Needs '+(need+1)+' weeks at this incline.');
+  };
+  if(rst && rgl && rin && rwk){
+    [rst,rgl,rin].forEach(function(el){ el.oninput = paintLadder; });
+    rwk.oninput = paintLadder;
+    rst.onchange = function(){ p.startRung = +rst.value; if(p.goalRung < p.startRung) p.goalRung = p.startRung; render(); };
+    rgl.onchange = function(){ p.goalRung = Math.max(+rgl.value, p.startRung); render(); };
+    rin.onchange = function(){ p.incline = (+rin.value)/4; render(); };
+    rwk.onchange = function(){ p.weeks = Math.max(2, Math.min(52, +rwk.value||12)); p.cur = Math.min(p.cur, p.weeks); render(); };
+  }
+  $$('[data-sess]').forEach(function(el){ el.onclick = function(){ sessionModal(p, el.dataset.sess); }; });
+
   const gw = $('#bd-gw'), gs = $('#bd-gs'), ld = $('#bd-ld');
   if(gw) gw.onchange = function(){ p.goalWeek = Math.max(0, +gw.value||0); syncGoal(p); render(); };
   if(gs) gs.onchange = function(){ p.goalSession = Math.max(0, +gs.value||0); syncGoal(p); render(); };
@@ -1785,6 +2005,43 @@ function bindBuilder(p){
       render();
     };
   });
+}
+
+function sessionModal(p, key){
+  const parts = key.split('-'), w = +parts[0], di = +parts[1];
+  const prog = computeProgram(p, CFG);
+  const day = prog.weeks[w-1].days[di];
+  const cur = (p.sessionOverrides && p.sessionOverrides[key] !== undefined) ? p.sessionOverrides[key] : day.km;
+  const rx = sessionPrescription(cur, prog.unit, prog.pace, prog.continuousAt);
+  $('#modal').innerHTML =
+    '<div class="modal-h"><div style="flex:1"><div style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:650">'+
+      'Week '+w+' \u00b7 '+DAYSL[di]+'</div><h3 style="font-size:16px;margin-top:2px">Change this session</h3></div></div>'+
+    '<div class="modal-b">'+
+      '<div class="note" style="margin-bottom:14px">The plan calls for <b>'+fmtVol(day.km, prog.unit)+'</b>. '+
+      'Changing it here affects this session only; the rest of the plan is untouched.</div>'+
+      '<label class="field"><span class="lbl">Session ('+unitLabel(prog.unit)+')</span>'+
+        '<input type="number" min="0" step="0.1" id="ss-val" value="'+r1(cur)+'"></label>'+
+      '<div class="note" id="ss-rx">'+(rx ? 'Written as <b>'+rx.text+'</b>'+(rx.sub?' \u2014 '+rx.sub:'') : 'Rest day')+'</div>'+
+    '</div>'+
+    '<div class="modal-f">'+
+      ((p.sessionOverrides && p.sessionOverrides[key] !== undefined)
+        ? '<button class="btn" id="ss-clear" style="flex:0 0 auto">Reset to plan</button>' : '')+
+      '<button class="btn" onclick="closeModal()" style="flex:0 0 auto">Cancel</button>'+
+      '<button class="btn btn-p" id="ss-save" style="flex:1;justify-content:center">Save session</button></div>';
+  const val = $('#ss-val');
+  val.oninput = function(){
+    const r2 = sessionPrescription(+val.value, prog.unit, prog.pace, prog.continuousAt);
+    $('#ss-rx').innerHTML = r2 ? 'Written as <b>'+r2.text+'</b>'+(r2.sub?' \u2014 '+r2.sub:'') : 'Rest day';
+  };
+  $('#ss-save').onclick = function(){
+    p.sessionOverrides = p.sessionOverrides || {};
+    p.sessionOverrides[key] = Math.max(0, +val.value||0);
+    closeModal(); toast('Session changed \u2014 audit logged'); render();
+  };
+  const clr = $('#ss-clear');
+  if(clr) clr.onclick = function(){ delete p.sessionOverrides[key]; closeModal(); toast('Back to the plan'); render(); };
+  $('#scrim').classList.add('on');
+  val.focus();
 }
 
 function overrideModal(p, w){
@@ -2041,6 +2298,9 @@ function newProgramme(){
     PATIENTS.push({ id:id, name:N.name, age:0, injury:inj.name,
       goal:N.goal.slice(), goalWeek:N.goalWeek, goalSession:N.goalSession,
       days:N.days.slice(), longDay:N.longDay,
+      startRung: rungForVolume(N.goalWeek*(1-N.red)),
+      goalRung:  rungForVolume(N.goalWeek),
+      incline:   1, sessionOverrides:{},
       red:N.red, inc:N.inc, weeks:N.weeks || 12,
       protocol:proto.id, cur:1, since:'today',
       colour:NEWCOLOURS[PATIENTS.length % NEWCOLOURS.length], logs:{}, levels:{} });
