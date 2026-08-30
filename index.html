@@ -597,15 +597,23 @@ const RUNLADDER = (function(){
           sub:rm+' min of running in '+tot+' min' });
   });
 
-  /* --- continuous running, in minutes so it holds for any pace --- */
-  let m = 90;     /* picks up exactly where 30 min of running x3 leaves off */
+  /* --- continuous running, in minutes so it holds for any pace ---
+     Two rules keep the climb honest. The long run ramps in over the first few
+     rungs instead of taking its full share immediately, so the first
+     continuous week is three equal 30 minute runs and joins the walk/run rungs
+     exactly where they left off. And the long run never shrinks, because
+     adding a training day at the same weekly total always makes the other
+     sessions smaller, and a rung that makes the biggest ask smaller is not a
+     step up. The other sessions absorb the difference. */
+  let m = 90, idx = 0, prevLng = 30;
   while(m <= 600){
-    const d = rungDays(m);
-    const lng = Math.min(220, LONGSHARE[d]*m);   /* cap the long run near 3.5 hours */
+    const d = rungDays(m), flat = 1/d;
+    const share = flat + (LONGSHARE[d] - flat) * Math.min(1, idx/4);
+    const lng = Math.max(prevLng, Math.min(220, share*m));   // cap near 3.5 hours
     add({ phase:'run', days:d,
           weekMin:Math.round(m), lngMin:Math.round(lng),
-          othMin:Math.round(d > 1 ? (m-lng)/(d-1) : 0) });
-    m *= 1.11;
+          othMin:Math.round(d > 1 ? Math.max(0, (m-lng)/(d-1)) : 0) });
+    prevLng = lng; idx++; m *= 1.11;
   }
   return out;
 })();
@@ -683,14 +691,26 @@ function weeksToClimb(from, to, inclinePerWeek){
 /* the prescription for one session on a given rung */
 /* the start slider answers "what does day one look like", so it names one
    session. The week total moves to the line underneath it. */
+/* The biggest single thing a rung asks of the tissue. On the walking and
+   walk/run rungs every session is the same, so that is the session; on the
+   running rungs it is the long run. Reading it this way the number climbs
+   every time the slider moves right, which the typical session cannot do
+   across a change of frequency. */
 function rungStartText(r, pace){
-  if(r.phase === 'run')     return fmtVol(minsToKm(r.othMin || r.lngMin, pace), 'km');
-  if(r.phase === 'walkrun') return r.text;
+  if(r.phase === 'run')     return Math.round(r.lngMin)+' min running';
+  if(r.phase === 'walkrun') return r.runMin+' min running';
   return r.walkMin+' min walking';
 }
+/* the shape of that session, which is what the patient actually does */
+function rungShapeText(r, pace){
+  if(r.phase === 'run')     return 'about '+fmtVol(minsToKm(r.lngMin, pace), 'km')+' continuous'+
+                                   (r.days > 1 ? ', others '+Math.round(r.othMin)+' min' : '');
+  if(r.phase === 'walkrun') return r.text;
+  return 'brisk and continuous';
+}
 function rungSubText(r, n, pace){
-  return 'Rung '+n+' of '+LADDER_TOP+' \u00b7 '+r.days+' sessions a week \u00b7 '+
-         rungWeekText(r, pace)+' in total';
+  return 'Rung '+n+' of '+LADDER_TOP+' · '+rungShapeText(r, pace)+
+         ' · '+r.days+' sessions a week · '+rungWeekText(r, pace)+' in total';
 }
 
 function rungSession(r, isLong, pace){
@@ -982,6 +1002,30 @@ function bandsFor(A){
            yellowAt: painScore(A, A.holdDuring, A.holdAfter) };
 }
 
+/* Said to the patient when a session is smaller than the week promised, or
+   when the week has been stopped. Nothing changes silently. */
+function easedNote(d){
+  if(!d) return '';
+  if(d.stopped) return 'Paused for the rest of this week. Maciek has been alerted and will be in touch.';
+  if(d.easedBy > 0) return 'This is lighter than the week started out. '+
+    (d.easedBy > 1 ? d.easedBy+' sessions came back sore' : 'A session came back sore')+
+    ', so RAMP eased the rest of the week back '+(d.easedBy > 1 ? d.easedBy+' rungs' : 'a rung')+'.';
+  return '';
+}
+
+/* One session, graded the moment both its answers are in. The week no longer
+   has to finish before the plan responds: a session that eases back makes the
+   rest of that week smaller, and one that crosses the stop rule ends the week
+   there. The weekly grade still decides which rung the next week starts on. */
+function sessionGrade(log, A){
+  if(!log) return null;
+  if(log.pd >= A.flagPainDuring || log.pa >= A.flagPainAfter) return 'flag';
+  const sc = painScore(A, log.pd, log.pa);
+  let g = sc >= A.greenAt ? 'green' : sc >= A.yellowAt ? 'yellow' : 'red';
+  if(log.b !== 'yes' && g !== 'red') g = (g === 'green') ? 'yellow' : 'red';
+  return g;
+}
+
 /* One grade, used by the ladder and by the week table so the two cannot drift.
    Pain picks the band; not settling can only make it more cautious; and a
    second hold in a row means the rung is wrong, not that the week was unlucky. */
@@ -1144,7 +1188,7 @@ function deloadText(from, to){
 /* The length of a programme is not a number anyone types in. It is however long
    the climb from the start rung to the goal rung takes at this incline, so a
    setback does not move the goal, it moves the finish line one week further out. */
-function ladderWalk(p, statuses, deload){
+function ladderWalk(p, statuses, deload, eases){
   const start = p.startRung || 1, inc = (p.incline === undefined ? 1 : p.incline);
   const top = p.goalRung || LADDER_TOP;
   const floorW = Math.max(p.cur || 1, 2);
@@ -1155,9 +1199,15 @@ function ladderWalk(p, statuses, deload){
     out.push(rung);
     if(held ? w >= held : (rung >= top && w >= floorW)) break;
     const st = statuses[w-1];
-    if(st === 'red' || st === 'flag') pos = Math.max(1, rung - rungsToDrop(rung, deload));
+    /* the week may already have given rungs back as it went. The next week
+       starts from where it finished, and a weekly ease does not double count
+       on top of that. */
+    const gave = (eases && eases[w-1]) ? eases[w-1] : 0;
+    if(gave > 0) pos = Math.max(1, rung - gave);   // the week ended lower than it began
+    if(st === 'red' || st === 'flag')
+      pos = Math.max(1, rung - Math.max(gave, rungsToDrop(rung, deload)));
     else if(st === 'green' || st === undefined || st === 'future') pos = Math.min(top, pos + inc);
-    /* yellow, active, nodata hold */
+    /* yellow, active and nodata hold where the week ended, fraction and all */
   }
   return out;
 }
@@ -1180,17 +1230,23 @@ function weekStatuses(p, A, rungs, n){
     const dayList = pickDays(p.days || [2,4,6], R.days, p.longDay);
     const ld = dayList[dayList.length-1];
     let wsum = 0, tot = 0, unsettled = 0, logged = 0, flagged = false;
-    dayList.forEach(function(i){
+    /* eased counts the rungs the week gave back as it went, the same walk the
+       engine does, so the next week can start where this one actually ended */
+    let eased = 0, stop = false;
+    dayList.forEach(function(i, di){
       const log = p.logs[w+'-'+i];
-      if(!log) return;
+      if(!log || stop) return;
       logged++;
-      if(log.pd >= A.flagPainDuring || log.pa >= A.flagPainAfter) flagged = true;
+      const sg = sessionGrade(log, A);
+      if(sg === 'flag') flagged = true;
       const load = rungSessionMinutes(R, i === ld) + (A.sessionLoad || 0);
       wsum += load; tot += load * runScore(log, A);
       if(log.b !== 'yes') unsettled += load;
+      if(sg === 'flag') stop = true;
+      else if(sg === 'red' && di < dayList.length - 1 && (rungs[w-1] || 1) - eased > 1) eased++;
     });
-    const push = function(st, sc, us){ out.push({status:st, score:sc, unsettled:us}); };
-    if(!logged){ holdRun = 0; push(w < p.cur ? 'nodata' : 'future', null, 0); continue; }
+    const push = function(st, sc, us){ out.push({status:st, score:sc, unsettled:us, eased:eased}); };
+    if(!logged){ holdRun = 0; eased = 0; push(w < p.cur ? 'nodata' : 'future', null, 0); continue; }
     const sc = wsum ? tot/wsum : null;
     const us = wsum ? unsettled/wsum : 0;
     if(CFG.safetyStop && flagged){ holdRun = 0; push('flag', sc, us); continue; }
@@ -1202,6 +1258,7 @@ function weekStatuses(p, A, rungs, n){
   return out;
 }
 function statusList(g){ return g.map(function(x){ return x.status; }); }
+function easedList(g){ return g.map(function(x){ return x.eased || 0; }); }
 
 function sameRungs(a, b){
   if(a.length !== b.length) return false;
@@ -1212,9 +1269,10 @@ function sameRungs(a, b){
 function ladderRungs(p){
   const A = algoFor(p, CFG);
   /* seed with an all-green walk, then re-grade and re-walk until it settles */
-  let rungs = ladderWalk(p, [], A.deload);
+  let rungs = ladderWalk(p, [], A.deload, null);
   for(let pass = 0; pass < 4; pass++){
-    const next = ladderWalk(p, statusList(weekStatuses(p, A, rungs, rungs.length + 8)), A.deload);
+    const g = weekStatuses(p, A, rungs, rungs.length + 8);
+    const next = ladderWalk(p, statusList(g), A.deload, easedList(g));
     if(sameRungs(next, rungs)) break;
     rungs = next;
   }
@@ -1226,7 +1284,7 @@ function ladderPlannedLength(p){
   const inc = (p.incline === undefined ? 1 : p.incline);
   if(inc <= 0) return null;
   /* walked rather than calculated, so it always agrees with the plan on screen */
-  return ladderWalk({ startRung:p.startRung, goalRung:p.goalRung, incline:inc, cur:1 }, [], 0).length;
+  return ladderWalk({ startRung:p.startRung, goalRung:p.goalRung, incline:inc, cur:1 }, [], 0, null).length;
 }
 
 function computeProgram(p, cfg){
@@ -1270,13 +1328,18 @@ function computeProgram(p, cfg){
     if(!useLadder && cfg.capAtGoal) vol = Math.min(vol, goalTotal);
     const start = new Date(wk0); start.setDate(start.getDate()+(w-1)*7);
     const volOn = volStream ? itemActive(volStream, w, nWeeks) : true;
+    /* the week is walked in order, so an answer given on Tuesday can change
+       what Thursday asks for. The day pattern stays as the week was written;
+       only the size of the remaining sessions moves. */
+    let liveRung = useLadder ? rungs[w-1] : null, easedBy = 0, stopped = false;
     const days  = [0,1,2,3,4,5,6].map(function(i){
-      let amount = 0, rx = null;
+      let amount = 0, rx = null, wasEased = easedBy, wasStopped = stopped;
       if(useLadder){
-        if(ladderDays.indexOf(i) >= 0 && volOn){
+        if(ladderDays.indexOf(i) >= 0 && volOn && !stopped){
           const isLong = (i === ladderDays[ladderDays.length-1]);
-          rx = rungSession(R, isLong, pace);
-          amount = (R.phase === 'run') ? rx.km : (R.sessMin || R.walkMin);
+          rx = rungSession(rungAt(liveRung), isLong, pace);
+          amount = (rungAt(liveRung).phase === 'run') ? rx.km
+                 : (rungAt(liveRung).sessMin || rungAt(liveRung).walkMin);
         }
       } else {
         amount = volOn ? vol*rel[i] : 0;
@@ -1294,7 +1357,15 @@ function computeProgram(p, cfg){
       const mins = (rx && rx.kind === 'continuous') ? amount*pace
                  : (useLadder ? amount : amount*pace);
       const load = mins + (hasExtra ? (A.sessionLoad || 3) : 0);
+      const builtRung = liveRung;          // the rung this day was written from
+      const sg = useLadder ? sessionGrade(log, A) : null;
+      if(useLadder && log){
+        if(sg === 'flag') stopped = true;
+        else if(sg === 'red' && liveRung > 1){ liveRung--; easedBy++; }
+      }
       return { i, key, km:amount, rx:rx, load, hasExtra, log, date:dt,
+               rung: useLadder ? (wasStopped ? null : builtRung) : null,
+               sessGrade: sg, easedBy: wasEased, stopped: wasStopped,
                isRun:amount>0, isSession: load>0,
                score: load>0 ? runScore(log,A) : null,
                isPast: dt < midnight, isToday: dt.getTime() === midnight.getTime() };
@@ -1519,10 +1590,16 @@ function wToday(p, prog, wk){
   const items = nx ? itemsOn(p, prog, wk, nx.i) : [];
   const run = items.filter(function(i){ return i.type==='volume'; })[0];
   let hero;
+  const halted = wk.days.some(function(d){ return d.stopped; });
   if(!nx){
-    hero = '<div class="hero"><div><div class="eyebrow">Week '+p.cur+' complete</div>'+
-      '<div class="big">All done</div>'+
-      '<div class="sub">Every session logged. Your plan for next week appears here on Sunday evening.</div></div></div>';
+    hero = halted
+      ? '<div class="hero"><div><div class="eyebrow">Week '+p.cur+' paused</div>'+
+        '<div class="big">Rest this week</div>'+
+        '<div class="sub">That last session crossed the line RAMP watches for, so the rest of this week '+
+        'has been taken off the plan. Maciek has been alerted.</div></div></div>'
+      : '<div class="hero"><div><div class="eyebrow">Week '+p.cur+' complete</div>'+
+        '<div class="big">All done</div>'+
+        '<div class="sub">Every session logged. Your plan for next week appears here on Sunday evening.</div></div></div>';
   } else {
     const when = nx.isToday ? 'Today \u00b7 '+DAYSL[nx.i]+' '+fmtDate(nx.date)
                : (nx.isPast ? 'Still to log \u00b7 '+DAYSL[nx.i]+' '+fmtDate(nx.date)
@@ -1543,7 +1620,8 @@ function wToday(p, prog, wk){
                  ? 'Run the efforts easy, between '+prog.paceBand+'. Walk the recovery, do not stand still.'
                  : run.rx && run.rx.kind==='walk'
                  ? 'It should stay pain free the whole way. If it does not, stop and log it.'
-                 : 'Easy, conversational pace. Stop if pain climbs above 5 out of 10.')
+                 : 'Easy, conversational pace. Stop if pain climbs above 5 out of 10.')+
+               (easedNote(nx) ? '<br><b>'+easedNote(nx)+'</b>' : '')
              : lead.detail)+
         (others.length ? '<br><b>Also today:</b> '+others.map(function(o){ return o.name+' \u2014 '+o.detail; }).join('; ') : '')+
       '</div></div>'+
@@ -1573,11 +1651,14 @@ function wToday(p, prog, wk){
           const st = d.log ? '<span class="pill pill-g">Logged</span>'
                            : (d.isPast ? '<span class="pill pill-a">Not logged yet</span>' : '<span class="pill pill-n">Upcoming</span>');
           const det = d.log
-            ? 'Pain '+d.log.pd+'/10 during \u00b7 '+d.log.pa+'/10 next morning \u00b7 symptoms '+(d.log.b==='yes'?'settled':'still present')
+            ? 'Pain '+d.log.pd+'/10 during · '+d.log.pa+'/10 next morning · symptoms '+(d.log.b==='yes'?'settled':'still present')
             : its.map(function(i){ return itemLabel(i); }).join(' + ');
+          const note = easedNote(d);
           return '<div class="runrow"><div class="dot '+(d.log?'dot-g':'dot-n')+'"></div>'+
             '<div style="flex:1;min-width:0"><div style="font-weight:640;font-size:13.5px">'+DAYSL[d.i]+' '+fmtDate(d.date)+'</div>'+
-            '<div class="sm">'+det+'</div></div>'+st+'</div>';
+            '<div class="sm">'+det+'</div>'+
+            (note ? '<div class="sm" style="color:var(--accent);font-weight:600">'+note+'</div>' : '')+
+            '</div>'+st+'</div>';
         }).join('') +'</div></div>'+
 
       '<div>'+
@@ -1694,7 +1775,9 @@ function wPlan(p, prog, wk){
       wk.days.map(function(d){
         const its = itemsOn(p, prog, wk, d.i);
         if(!its.length) return '<div class="runrow"><div class="dot dot-n"></div><div style="flex:1"><div style="font-weight:600;font-size:13.5px;color:var(--muted)">'+DAYSL[d.i]+' '+fmtDate(d.date)+'</div>'+
-          '<div class="sm">Rest, or cross-train with something that does not aggravate it</div></div></div>';
+          '<div class="sm">'+(d.stopped
+            ? 'Taken off the plan while your progression is paused'
+            : 'Rest, or cross-train with something that does not aggravate it')+'</div></div></div>';
         return '<div class="runrow"><div class="dot '+(d.log?'dot-g':'dot-n')+'"></div>'+
           '<div style="flex:1"><div style="font-weight:640;font-size:13.5px">'+DAYSL[d.i]+' '+fmtDate(d.date)+(d.log?' · logged':'')+'</div>'+
           its.map(function(it){
@@ -2598,9 +2681,12 @@ function newProgramme(){
         '<div class="note" style="margin-bottom:16px">Set this from what they can do <b>today</b> without stirring symptoms, '+
         'not from their goal. A badly irritable tendon starts on the walking rungs whether they are aiming at a 5 km or a marathon.</div>'+
         ladderControls(N, 'np')+
-        '<div class="note" style="margin-top:14px">From here RAMP only does three things: after each week it reads the pain '+
-        'during and the pain the next morning, then <b>progresses</b>, <b>holds</b> or <b>falls back</b>. '+
-        'The sensitivity comes from '+inj.name.toLowerCase()+', which the clinic set once.</div>'+
+        '<div class="note" style="margin-top:14px">From here RAMP reads two answers after <b>every session</b>, '+
+        'the pain during it and the pain the next morning. A session that goes badly makes the rest of '+
+        '<b>that week</b> smaller straight away, and one that crosses the stop rule ends the week there. '+
+        'At the end of the week the same two answers decide whether the next week <b>steps up</b>, '+
+        '<b>holds</b> or <b>eases back</b> a rung. The sensitivity comes from '+inj.name.toLowerCase()+
+        ', which the clinic set once.</div>'+
       '</div></div>'+
 
       '</div></div>';
