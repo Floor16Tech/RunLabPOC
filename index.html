@@ -420,10 +420,12 @@ const CFG = {
   painStep:        0.025,   // sheet: 1 - 0.025 x NRS  -> 0 pain = 1.0, 10/10 = 0.75 weight
   wDuring:         0.40,
   wAfter:          0.40,
-  wBaseline:       0.20,
-  baselineNoValue: 0.50,    // sheet: "No" scores half
-  greenAt:         0.91,    // >= then progress
-  yellowAt:        0.90,    // >= then hold
+  /* the two sessions that define the bands, in the answers a patient gives */
+  okDuring:        2,       // worst session still called a good one
+  okAfter:         2,
+  holdDuring:      5,       // worst session still held at this rung
+  holdAfter:       4,
+  holdsBeforeDrop: 2,       // a second hold in a row means the rung is wrong
   deload:          0.10,    // else -10 %
   capAtGoal:       true,    // FIX: never prescribe beyond the agreed goal volume
   blankIsNotNo:    true,    // FIX: an unlogged run is excluded, not scored as "No"
@@ -456,56 +458,47 @@ const INJURIES = [
   {key:'achilles', name:'Achilles tendinopathy', region:'Achilles / calf', weeks:12,
    note:'Load-tolerant tissue. The next morning matters more than pain during the session.',
    typical:['run','walk','court'], maxInc:0.10, defRed:0.35,
-   algo:{wDuring:0.30, wAfter:0.50, wBaseline:0.20, painStep:0.025, greenAt:0.91, yellowAt:0.90,
-         deload:0.10, dwell:2, flagPainDuring:7, flagPainAfter:5}},
+   algo:{okDuring:3, okAfter:2, holdDuring:5, holdAfter:4, wDuring:0.30, wAfter:0.50, painStep:0.025, deload:0.10, dwell:2, flagPainDuring:7, flagPainAfter:5}},
 
   {key:'patellar', name:'Patellar tendinopathy', region:'Knee', weeks:12,
    note:'Jumping and deceleration load. Tolerates pain during loading; judge it the morning after.',
    typical:['court','run'], maxInc:0.10, defRed:0.40,
-   algo:{wDuring:0.30, wAfter:0.50, wBaseline:0.20, painStep:0.025, greenAt:0.91, yellowAt:0.90,
-         deload:0.10, dwell:2, flagPainDuring:7, flagPainAfter:5}},
+   algo:{okDuring:3, okAfter:2, holdDuring:5, holdAfter:4, wDuring:0.30, wAfter:0.50, painStep:0.025, deload:0.10, dwell:2, flagPainDuring:7, flagPainAfter:5}},
 
   {key:'gluteal', name:'Gluteal tendinopathy', region:'Lateral hip', weeks:12,
    note:'Compression-sensitive. Hills, stairs and long single-leg stance load it independently of distance.',
    typical:['walk','run','bike'], maxInc:0.10, defRed:0.40,
-   algo:{wDuring:0.30, wAfter:0.50, wBaseline:0.20, painStep:0.03, greenAt:0.91, yellowAt:0.90,
-         deload:0.10, dwell:2, flagPainDuring:7, flagPainAfter:5}},
+   algo:{okDuring:3, okAfter:2, holdDuring:5, holdAfter:4, wDuring:0.30, wAfter:0.50, painStep:0.03, deload:0.10, dwell:2, flagPainDuring:7, flagPainAfter:5}},
 
   {key:'hamstring', name:'Proximal hamstring tendinopathy', region:'Ischial / posterior thigh', weeks:16,
    note:'Slow to settle. Compression in hip flexion aggravates it, so uphill and speed work come last.',
    typical:['run','walk','bike'], maxInc:0.08, defRed:0.45,
-   algo:{wDuring:0.30, wAfter:0.50, wBaseline:0.20, painStep:0.03, greenAt:0.91, yellowAt:0.90,
-         deload:0.10, dwell:3, flagPainDuring:6, flagPainAfter:5}},
+   algo:{okDuring:3, okAfter:2, holdDuring:5, holdAfter:4, wDuring:0.30, wAfter:0.50, painStep:0.03, deload:0.10, dwell:3, flagPainDuring:6, flagPainAfter:5}},
 
   {key:'pfps', name:'Patellofemoral pain', region:'Knee', weeks:10,
    note:'The largest standing caseload in most running clinics. Responds well to volume control.',
    typical:['run','bike','walk'], maxInc:0.10, defRed:0.35,
-   algo:{wDuring:0.40, wAfter:0.40, wBaseline:0.20, painStep:0.025, greenAt:0.91, yellowAt:0.90,
-         deload:0.10, dwell:2, flagPainDuring:7, flagPainAfter:5}},
+   algo:{okDuring:2, okAfter:2, holdDuring:4, holdAfter:3, wDuring:0.40, wAfter:0.40, painStep:0.025, deload:0.10, dwell:2, flagPainDuring:7, flagPainAfter:5}},
 
   {key:'mtss', name:'Medial tibial stress syndrome', region:'Shin', weeks:10,
    note:'Volume-driven. Treat a jump in the long session as seriously as a jump in the week.',
    typical:['run','walk'], maxInc:0.08, defRed:0.45,
-   algo:{wDuring:0.45, wAfter:0.35, wBaseline:0.20, painStep:0.035, greenAt:0.92, yellowAt:0.90,
-         deload:0.15, dwell:2, flagPainDuring:5, flagPainAfter:4}},
+   algo:{okDuring:2, okAfter:2, holdDuring:4, holdAfter:3, wDuring:0.45, wAfter:0.35, painStep:0.035, deload:0.15, dwell:2, flagPainDuring:5, flagPainAfter:4}},
 
   {key:'plantar', name:'Plantar fasciopathy', region:'Heel / plantar fascia', weeks:14,
    note:'First-step morning pain is the cleanest signal in the whole system. Weight it heavily.',
    typical:['run','walk'], maxInc:0.10, defRed:0.40,
-   algo:{wDuring:0.25, wAfter:0.55, wBaseline:0.20, painStep:0.025, greenAt:0.91, yellowAt:0.90,
-         deload:0.10, dwell:2, flagPainDuring:7, flagPainAfter:5}},
+   algo:{okDuring:2, okAfter:2, holdDuring:5, holdAfter:4, wDuring:0.25, wAfter:0.55, painStep:0.025, deload:0.10, dwell:2, flagPainDuring:7, flagPainAfter:5}},
 
   {key:'bone', name:'Bone stress injury, low-risk site', region:'Tibia / metatarsal', weeks:16,
    note:'Posteromedial tibia, metatarsals 2 to 4, fibula only. Any pain during loading is a stop rule.',
    typical:['run','walk','bike','swim'], maxInc:0.08, defRed:0.55,
-   algo:{wDuring:0.55, wAfter:0.25, wBaseline:0.20, painStep:0.04, greenAt:0.93, yellowAt:0.91,
-         deload:0.15, dwell:3, flagPainDuring:4, flagPainAfter:3}},
+   algo:{okDuring:1, okAfter:1, holdDuring:3, holdAfter:2, wDuring:0.55, wAfter:0.25, painStep:0.04, deload:0.15, dwell:3, flagPainDuring:4, flagPainAfter:3}},
 
   {key:'aclr', name:'Post-ACLR', region:'Knee', weeks:12,
    note:'Hop-test clearance before starting. Stage changes should be gated on testing, not on a pain score.',
    typical:['run','court','bike'], maxInc:0.12, defRed:0.40,
-   algo:{wDuring:0.35, wAfter:0.35, wBaseline:0.30, painStep:0.03, greenAt:0.92, yellowAt:0.90,
-         deload:0.10, dwell:2, flagPainDuring:6, flagPainAfter:4}}
+   algo:{okDuring:2, okAfter:1, holdDuring:4, holdAfter:3, wDuring:0.35, wAfter:0.35, painStep:0.03, deload:0.10, dwell:2, flagPainDuring:6, flagPainAfter:4}}
 ];
 
 const ACTIVITIES = [
@@ -736,7 +729,7 @@ function composeProtocol(inj, act, unit, withIntervals){
     from: {injury:inj.key, activity:act.key},
     red: red, inc: inc, weeks: Math.max(inj.weeks, act.weeks), uses: 0,
     painMode: 'session',
-    algo: Object.assign({}, inj.algo, {sessionLoad:3, baselineNoValue:0.5}),
+    algo: Object.assign({}, inj.algo, {sessionLoad:3}),
     streams: streams
   };
 }
@@ -754,8 +747,8 @@ const PROTOCOLS = [
   {id:'tendo', name:'Mid-portion Achilles tendinopathy', region:'Achilles / calf',
    red:0.35, inc:0.10, weeks:12, uses:14,
    note:'Load-tolerant tissue. The next morning matters more than pain during the run.',
-   algo:{ wDuring:0.30, wAfter:0.50, wBaseline:0.20, painStep:0.025,
-          greenAt:0.91, yellowAt:0.90, deload:0.10, dwell:2, sessionLoad:4, flagPainDuring:7, flagPainAfter:5 },
+   algo:{ okDuring:3, okAfter:2, holdDuring:5, holdAfter:4, wDuring:0.30, wAfter:0.50, painStep:0.025,
+          deload:0.10, dwell:2, sessionLoad:4, flagPainDuring:7, flagPainAfter:5 },
    streams:[
      {key:'run',  type:'volume', name:'Running', unit:'km', pace:6.5},
    ]},
@@ -763,29 +756,30 @@ const PROTOCOLS = [
   {id:'bone', name:'Bone stress injury \u2014 cautious', region:'Tibia / metatarsal',
    red:0.50, inc:0.10, weeks:16, uses:6,
    note:'Any pain during running is a stop rule. Scored strictly and deloaded hard.',
-   algo:{ wDuring:0.55, wAfter:0.25, wBaseline:0.20, painStep:0.04,
-          greenAt:0.93, yellowAt:0.91, deload:0.15, dwell:3, flagPainDuring:4, flagPainAfter:3 },
+   algo:{ okDuring:1, okAfter:1, holdDuring:3, holdAfter:2,
+          wDuring:0.55, wAfter:0.25, painStep:0.04,
+          deload:0.15, dwell:3, flagPainDuring:4, flagPainAfter:3 },
    streams:[ {key:'run', type:'volume', name:'Running', unit:'km', pace:6.5} ]},
 
   {id:'std', name:'General return to run', region:'Any lower limb',
    red:0.30, inc:0.15, weeks:8, uses:31,
    note:'Balanced default for a runner with no red flags and a clear goal distance.',
-   algo:{ wDuring:0.40, wAfter:0.40, wBaseline:0.20, painStep:0.025,
-          greenAt:0.91, yellowAt:0.90, deload:0.10, dwell:2, flagPainDuring:7, flagPainAfter:5 },
+   algo:{ okDuring:2, okAfter:2, holdDuring:5, holdAfter:4, wDuring:0.40, wAfter:0.40, painStep:0.025,
+          deload:0.10, dwell:2, flagPainDuring:7, flagPainAfter:5 },
    streams:[ {key:'run', type:'volume', name:'Running', unit:'km', pace:6.5} ]},
 
   {id:'pht', name:'Proximal hamstring tendinopathy', region:'Ischial / posterior thigh',
    red:0.35, inc:0.10, weeks:16, uses:5,
    note:'Compression in hip flexion is the aggravator, so uphill and speed work come last. Slow to settle, and graded on the next morning.',
-   algo:{ wDuring:0.30, wAfter:0.50, wBaseline:0.20, painStep:0.025,
-          greenAt:0.91, yellowAt:0.90, deload:0.10, dwell:3, flagPainDuring:6, flagPainAfter:4 },
+   algo:{ okDuring:3, okAfter:2, holdDuring:5, holdAfter:4, wDuring:0.30, wAfter:0.50, painStep:0.025,
+          deload:0.10, dwell:3, flagPainDuring:6, flagPainAfter:4 },
    streams:[ {key:'run', type:'volume', name:'Running', unit:'km', pace:6.5} ]},
 
   {id:'acl', name:'Post-ACLR return to sport', region:'Knee',
    red:0.35, inc:0.15, weeks:10, uses:9,
    note:'Hop-test clearance before week 1. Court exposure climbs only on clean weeks.',
-   algo:{ wDuring:0.35, wAfter:0.35, wBaseline:0.30, painStep:0.03,
-          greenAt:0.92, yellowAt:0.90, deload:0.10, dwell:2, sessionLoad:5, flagPainDuring:6, flagPainAfter:4 },
+   algo:{ okDuring:2, okAfter:1, holdDuring:4, holdAfter:3, wDuring:0.35, wAfter:0.35, painStep:0.03,
+          deload:0.10, dwell:2, sessionLoad:5, flagPainDuring:6, flagPainAfter:4 },
    streams:[
      {key:'run',   type:'volume', name:'Running', unit:'km', pace:6.5},
      {key:'court', type:'ladder', name:'Return to court', days:[1,4], from:2, forWeeks:null, every:2, rungs:[
@@ -819,11 +813,11 @@ const PATIENTS = [
     paceFast:5.25, paceSlow:6.25, sessionOverrides:{},
     logs:{ '1-2':{pd:2,pa:1,b:'yes'}, '1-4':{pd:1,pa:1,b:'yes'}, '1-6':{pd:2,pa:0,b:'yes'},
            '2-2':{pd:2,pa:2,b:'yes'}, '2-4':{pd:1,pa:1,b:'yes'}, '2-6':{pd:2,pa:1,b:'yes'},
-           '3-2':{pd:5,pa:4,b:'no'},  '3-4':{pd:4,pa:4,b:'yes'}, '3-6':{pd:5,pa:3,b:'no'},
-           '4-2':{pd:3,pa:2,b:'yes'}, '4-4':{pd:3,pa:3,b:'yes'}, '4-6':{pd:2,pa:2,b:'yes'},
-           /* the one week in the demo that lands in the hold band. It takes pain
-              of 5, 5 and 6 out of 10 to get there, which is worth noticing */
-           '5-2':{pd:5,pa:4,b:'yes'}, '5-4':{pd:5,pa:4,b:'yes'}, '5-6':{pd:6,pa:4,b:'yes'},
+           /* the flare: past the hold ceiling on every run, and it did not settle */
+           '3-2':{pd:6,pa:4,b:'no'},  '3-4':{pd:5,pa:4,b:'no'},  '3-6':{pd:6,pa:4,b:'no'},
+           '4-2':{pd:2,pa:2,b:'yes'}, '4-4':{pd:2,pa:1,b:'yes'}, '4-6':{pd:1,pa:1,b:'yes'},
+           /* a hold: inside the hold ceiling, past the progress one */
+           '5-2':{pd:4,pa:3,b:'yes'}, '5-4':{pd:4,pa:3,b:'yes'}, '5-6':{pd:4,pa:4,b:'yes'},
            '6-2':{pd:1,pa:1,b:'yes'}, '6-4':{pd:2,pa:0,b:'yes'}, '6-6':{pd:1,pa:1,b:'yes'},
            '7-2':{pd:2,pa:1,b:'yes'} } },
 
@@ -833,14 +827,15 @@ const PATIENTS = [
     red:0.40, inc:0.10, protocol:'std', cur:9, since:'22 Jun 2026', colour:'#3f3f46',
     days:[1,3,5], longDay:5, startRung:9, goalRung:21, incline:1,
     paceFast:6.0, paceSlow:7.25, sessionOverrides:{},
-    logs:{ '1-1':{pd:2,pa:2,b:'yes'}, '1-3':{pd:2,pa:1,b:'yes'}, '1-5':{pd:3,pa:2,b:'yes'},
-           '2-1':{pd:2,pa:1,b:'yes'}, '2-3':{pd:3,pa:2,b:'yes'}, '2-5':{pd:2,pa:2,b:'yes'},
-           '3-1':{pd:5,pa:5,b:'no'},  '3-3':{pd:6,pa:4,b:'no'},  '3-5':{pd:5,pa:4,b:'yes'},
-           '4-1':{pd:3,pa:2,b:'yes'}, '4-3':{pd:3,pa:3,b:'yes'}, '4-5':{pd:2,pa:2,b:'yes'},
-           '5-1':{pd:2,pa:2,b:'yes'}, '5-3':{pd:2,pa:1,b:'yes'}, '5-5':{pd:3,pa:2,b:'yes'},
-           '6-1':{pd:6,pa:5,b:'no'},  '6-3':{pd:5,pa:5,b:'no'},  '6-5':{pd:6,pa:4,b:'no'},
-           '7-1':{pd:3,pa:3,b:'yes'}, '7-3':{pd:4,pa:3,b:'yes'}, '7-5':{pd:3,pa:2,b:'yes'},
-           '8-1':{pd:5,pa:5,b:'no'},  '8-3':{pd:5,pa:4,b:'no'},  '8-5':{pd:4,pa:4,b:'no'},
+    logs:{ '1-1':{pd:2,pa:1,b:'yes'}, '1-3':{pd:2,pa:2,b:'yes'}, '1-5':{pd:1,pa:2,b:'yes'},
+           '2-1':{pd:2,pa:2,b:'yes'}, '2-3':{pd:1,pa:2,b:'yes'}, '2-5':{pd:2,pa:1,b:'yes'},
+           '3-1':{pd:6,pa:4,b:'no'},  '3-3':{pd:6,pa:4,b:'no'},  '3-5':{pd:5,pa:4,b:'no'},
+           '4-1':{pd:2,pa:2,b:'yes'}, '4-3':{pd:1,pa:1,b:'yes'}, '4-5':{pd:2,pa:1,b:'yes'},
+           '5-1':{pd:2,pa:1,b:'yes'}, '5-3':{pd:2,pa:2,b:'yes'}, '5-5':{pd:1,pa:1,b:'yes'},
+           '6-1':{pd:6,pa:4,b:'no'},  '6-3':{pd:5,pa:4,b:'no'},  '6-5':{pd:6,pa:3,b:'no'},
+           '7-1':{pd:2,pa:2,b:'yes'}, '7-3':{pd:1,pa:2,b:'yes'}, '7-5':{pd:2,pa:1,b:'yes'},
+           '8-1':{pd:6,pa:4,b:'no'},  '8-3':{pd:6,pa:4,b:'no'},  '8-5':{pd:5,pa:4,b:'no'},
+           /* over the flag threshold, so the safety stop fires on a live week */
            '9-1':{pd:8,pa:5,b:'no'} } },
 
   /* running rungs on the strictest protocol on the board: bone stress eases
@@ -849,12 +844,14 @@ const PATIENTS = [
     red:0.50, inc:0.10, protocol:'bone', cur:6, since:'13 Jul 2026', colour:'#E31B23',
     days:[2,4,6], longDay:6, startRung:17, goalRung:25, incline:1,
     paceFast:5.5, paceSlow:6.5, sessionOverrides:{},
-    logs:{ '1-2':{pd:1,pa:2,b:'yes'}, '1-4':{pd:2,pa:2,b:'yes'}, '1-6':{pd:2,pa:1,b:'yes'},
-           '2-2':{pd:1,pa:1,b:'yes'}, '2-4':{pd:2,pa:1,b:'yes'}, '2-6':{pd:1,pa:2,b:'yes'},
-           '3-2':{pd:2,pa:1,b:'yes'}, '3-4':{pd:1,pa:1,b:'yes'}, '3-6':{pd:2,pa:2,b:'yes'},
-           '4-2':{pd:5,pa:5,b:'no'},  '4-4':{pd:4,pa:4,b:'no'},  '4-6':{pd:5,pa:4,b:'no'},
-           '5-2':{pd:2,pa:1,b:'yes'}, '5-4':{pd:1,pa:2,b:'yes'}, '5-6':{pd:2,pa:1,b:'yes'},
-           '6-2':{pd:1,pa:1,b:'yes'} } },
+    logs:{ '1-2':{pd:1,pa:1,b:'yes'}, '1-4':{pd:0,pa:1,b:'yes'}, '1-6':{pd:1,pa:0,b:'yes'},
+           '2-2':{pd:1,pa:0,b:'yes'}, '2-4':{pd:1,pa:1,b:'yes'}, '2-6':{pd:0,pa:1,b:'yes'},
+           '3-2':{pd:1,pa:1,b:'yes'}, '3-4':{pd:1,pa:0,b:'yes'}, '3-6':{pd:1,pa:1,b:'yes'},
+           /* a shin that talked back on all three runs, and stayed under the
+              flag threshold, so it is a graded flare rather than a stop */
+           '4-2':{pd:3,pa:3,b:'no'},  '4-4':{pd:3,pa:2,b:'no'},  '4-6':{pd:3,pa:3,b:'no'},
+           '5-2':{pd:1,pa:1,b:'yes'}, '5-4':{pd:0,pa:1,b:'yes'}, '5-6':{pd:1,pa:1,b:'yes'},
+           '6-2':{pd:1,pa:0,b:'yes'} } },
 
   /* the clean case: every week green, no setbacks, and close enough to the top
      to show what a programme looks like as it finishes */
@@ -882,14 +879,20 @@ const PATIENTS = [
   /* the cautious dial: half a rung per good week, so the same climb takes twice
      as long. Still on the walking rungs, and deliberately so */
   { id:'p6', name:'Tom Ferreira', age:52, injury:'Proximal hamstring tendinopathy',
-    red:0.30, inc:0.15, protocol:'pht', cur:5, since:'27 Jul 2026', colour:'#27272a',
+    red:0.30, inc:0.15, protocol:'pht', cur:7, since:'13 Jul 2026', colour:'#27272a',
     days:[2,5,6], longDay:6, startRung:3, goalRung:15, incline:0.5,
     paceFast:6.75, paceSlow:8.0, sessionOverrides:{},
     logs:{ '1-2':{pd:2,pa:2,b:'yes'}, '1-5':{pd:2,pa:1,b:'yes'}, '1-6':{pd:3,pa:2,b:'yes'},
-           '2-2':{pd:2,pa:2,b:'yes'}, '2-5':{pd:3,pa:2,b:'yes'}, '2-6':{pd:2,pa:2,b:'yes'},
+           '2-2':{pd:2,pa:1,b:'yes'}, '2-5':{pd:2,pa:2,b:'yes'}, '2-6':{pd:2,pa:2,b:'yes'},
+           /* away for work, only one walk logged, so the week is not graded */
            '3-2':{pd:3,pa:3,b:'yes'},
-           '4-2':{pd:2,pa:2,b:'yes'}, '4-5':{pd:2,pa:1,b:'yes'}, '4-6':{pd:3,pa:2,b:'yes'},
-           '5-2':{pd:2,pa:1,b:'yes'} } }
+           /* comfortable numbers, but it kept not settling. Low pain is not
+              permission to climb, so the plan holds him where he is. */
+           '4-2':{pd:2,pa:2,b:'no'},  '4-5':{pd:2,pa:1,b:'no'},  '4-6':{pd:2,pa:2,b:'yes'},
+           /* and again, which is the plan's answer that the rung is wrong */
+           '5-2':{pd:2,pa:2,b:'no'},  '5-5':{pd:2,pa:2,b:'no'},  '5-6':{pd:2,pa:1,b:'yes'},
+           '6-2':{pd:2,pa:1,b:'yes'}, '6-5':{pd:2,pa:2,b:'yes'}, '6-6':{pd:1,pa:1,b:'yes'},
+           '7-2':{pd:2,pa:1,b:'yes'} } }
 ];
 
 /* A physiotherapist decides three things about the goal: how much in a week,
@@ -958,12 +961,35 @@ PATIENTS.forEach(function(p){ p.levels = START_LEVELS[p.id] || {}; });
 /* ==================================================================
    THE ENGINE  -  one function, and every screen reads from it
    ================================================================== */
-function runScore(l, cfg){
-  if(!l) return null;
-  const d = Math.max(0, 1 - cfg.painStep * l.pd);
-  const a = Math.max(0, 1 - cfg.painStep * l.pa);
-  const b = l.b === 'yes' ? 1 : cfg.baselineNoValue;
-  return cfg.wDuring*d + cfg.wAfter*a + cfg.wBaseline*b;
+/* The score says one thing: how much pain the session caused, during and the
+   next morning, weighted the way this protocol weights them. It is normalised
+   so a pain free session is 1 whatever the weights are. Whether symptoms
+   settled is deliberately NOT in here: it is a gate on the grade instead, so a
+   week that does not settle can never progress no matter how low the numbers. */
+function painScore(A, pd, pa){
+  const wd = A.wDuring, wa = A.wAfter, t = wd + wa;
+  return (wd*Math.max(0, 1 - A.painStep*pd) + wa*Math.max(0, 1 - A.painStep*pa)) / (t || 1);
+}
+function runScore(l, A){ return l ? painScore(A, l.pd, l.pa) : null; }
+
+/* The two thresholds are not constants anybody has to reason about. They are
+   the score of two sessions a physiotherapist can name: the worst session they
+   would still call a good one, and the worst they would still hold at this
+   rung. Deriving them keeps the bands honest if the weights are ever retuned,
+   and keeps them wider than one click of the inputs. */
+function bandsFor(A){
+  return { greenAt:  painScore(A, A.okDuring,   A.okAfter),
+           yellowAt: painScore(A, A.holdDuring, A.holdAfter) };
+}
+
+/* One grade, used by the ladder and by the week table so the two cannot drift.
+   Pain picks the band; not settling can only make it more cautious; and a
+   second hold in a row means the rung is wrong, not that the week was unlucky. */
+function gradeWeek(score, unsettledShare, holdRun, A){
+  let g = score >= A.greenAt ? 'green' : score >= A.yellowAt ? 'yellow' : 'red';
+  if(unsettledShare > 0.5 && g !== 'red') g = (g === 'green') ? 'yellow' : 'red';
+  if(g === 'yellow' && holdRun >= (A.holdsBeforeDrop || 2) - 1) g = 'red';
+  return g;
 }
 
 function mondayOfWeek(d){
@@ -976,7 +1002,8 @@ function protocolOf(p){ return PROTOCOLS.filter(function(x){ return x.id===p.pro
 /* the protocol's algorithm layered over the clinic defaults */
 function algoFor(p, cfg){
   const pr = protocolOf(p);
-  return Object.assign({}, cfg, (pr && pr.algo) ? pr.algo : {});
+  const A = Object.assign({}, cfg, (pr && pr.algo) ? pr.algo : {});
+  return Object.assign(A, bandsFor(A));   // derived, never typed in
 }
 function streamsOf(p){
   const pr = protocolOf(p);
@@ -1072,6 +1099,37 @@ function rungsToDrop(n, deload){
   return Math.max(1, n - best);
 }
 
+/* Why a week was graded the way it was, in the terms the protocol was set in:
+   the pain answers that define the bands, the settling gate, and the two hold
+   rule. Never a bare number the reader cannot check. */
+function gradeReason(status, score, unsettled, holdRun, A, useLadder, rungs, w, nextRung, p){
+  const ceiling = status === 'green' ? A.okDuring+'/'+A.okAfter
+                                     : A.holdDuring+'/'+A.holdAfter;
+  const gated = unsettled > 0.5;
+  if(status === 'flag')
+    return 'A session crossed the stop rule for this protocol, pain '+A.flagPainDuring+
+           ' during or '+A.flagPainAfter+' the next morning — '+
+           (useLadder ? deloadText(rungs[w-1], nextRung) : 'reduce '+pct(A.deload)+'%')+'.';
+  if(status === 'nodata')
+    return 'Too few sessions logged to grade the week — '+
+           (useLadder ? 'held on rung '+rungs[w-1] : 'volume carried forward unchanged')+'.';
+  if(status === 'green')
+    return 'Pain stayed inside '+A.okDuring+' during and '+A.okAfter+' the next morning — '+
+           (!useLadder ? 'increase '+pct(p.inc)+'%'
+            : nextRung == null ? 'already at the goal'
+            : nextRung === rungs[w-1] ? 'climb half a rung, so it stays on '+rungs[w-1]
+            : 'step up to rung '+nextRung)+'.';
+  if(status === 'yellow')
+    return (gated ? 'Symptoms did not settle after most sessions'
+                  : 'Pain past '+A.okDuring+'/'+A.okAfter+' but inside '+A.holdDuring+'/'+A.holdAfter)+
+           ' — '+(useLadder ? 'hold on rung '+rungs[w-1] : 'hold volume')+'.';
+  const cause = holdRun >= (A.holdsBeforeDrop || 2) - 1 ? 'A second hold in a row, so the rung is too hard'
+              : gated ? 'Symptoms did not settle, and pain was already past '+A.okDuring+'/'+A.okAfter
+              : 'Pain past '+A.holdDuring+' during or '+A.holdAfter+' the next morning';
+  return cause+' — '+
+         (useLadder ? deloadText(rungs[w-1], nextRung) : 'reduce '+pct(A.deload)+'%')+'.';
+}
+
 /* what actually happened, said in the patient's terms */
 function deloadText(from, to){
   if(to == null) return 'ease back a step';
@@ -1116,11 +1174,12 @@ function rungSessionMinutes(r, isLong){
    on them. */
 function weekStatuses(p, A, rungs, n){
   const out = [];
+  let holdRun = 0;                       // consecutive holds, for the two-hold rule
   for(let w = 1; w <= n; w++){
     const R = rungAt(rungs[w-1] || 1);
     const dayList = pickDays(p.days || [2,4,6], R.days, p.longDay);
     const ld = dayList[dayList.length-1];
-    let wsum = 0, tot = 0, logged = 0, flagged = false;
+    let wsum = 0, tot = 0, unsettled = 0, logged = 0, flagged = false;
     dayList.forEach(function(i){
       const log = p.logs[w+'-'+i];
       if(!log) return;
@@ -1128,15 +1187,21 @@ function weekStatuses(p, A, rungs, n){
       if(log.pd >= A.flagPainDuring || log.pa >= A.flagPainAfter) flagged = true;
       const load = rungSessionMinutes(R, i === ld) + (A.sessionLoad || 0);
       wsum += load; tot += load * runScore(log, A);
+      if(log.b !== 'yes') unsettled += load;
     });
-    if(!logged){ out.push(w < p.cur ? 'nodata' : 'future'); continue; }
-    if(CFG.safetyStop && flagged){ out.push('flag'); continue; }
-    if(logged < Math.min(CFG.minRunsToScore, dayList.length)){ out.push('nodata'); continue; }
+    const push = function(st, sc, us){ out.push({status:st, score:sc, unsettled:us}); };
+    if(!logged){ holdRun = 0; push(w < p.cur ? 'nodata' : 'future', null, 0); continue; }
     const sc = wsum ? tot/wsum : null;
-    out.push(sc >= A.greenAt ? 'green' : sc >= A.yellowAt ? 'yellow' : 'red');
+    const us = wsum ? unsettled/wsum : 0;
+    if(CFG.safetyStop && flagged){ holdRun = 0; push('flag', sc, us); continue; }
+    if(logged < Math.min(CFG.minRunsToScore, dayList.length)){ holdRun = 0; push('nodata', sc, us); continue; }
+    const g = gradeWeek(sc, us, holdRun, A);
+    holdRun = (g === 'yellow') ? holdRun + 1 : 0;
+    push(g, sc, us);
   }
   return out;
 }
+function statusList(g){ return g.map(function(x){ return x.status; }); }
 
 function sameRungs(a, b){
   if(a.length !== b.length) return false;
@@ -1149,7 +1214,7 @@ function ladderRungs(p){
   /* seed with an all-green walk, then re-grade and re-walk until it settles */
   let rungs = ladderWalk(p, [], A.deload);
   for(let pass = 0; pass < 4; pass++){
-    const next = ladderWalk(p, weekStatuses(p, A, rungs, rungs.length + 8), A.deload);
+    const next = ladderWalk(p, statusList(weekStatuses(p, A, rungs, rungs.length + 8)), A.deload);
     if(sameRungs(next, rungs)) break;
     rungs = next;
   }
@@ -1189,6 +1254,9 @@ function computeProgram(p, cfg){
   const useLadder = !!p.startRung;
   const rungs  = useLadder ? ladderRungs(p) : null;
   const nWeeks = useLadder ? rungs.length : p.weeks;
+  /* the ladder and the table now grade a week in exactly one place */
+  const grades = useLadder ? weekStatuses(p, A, rungs, nWeeks) : null;
+  let holdRun = 0;
   const cur    = Math.max(1, Math.min(p.cur, nWeeks));
 
   for(let w=1; w<=nWeeks; w++){
@@ -1240,7 +1308,10 @@ function computeProgram(p, cfg){
     /* volume-weighted mean response score - SUMPRODUCT(km,score)/SUM(km) */
     const pool  = cfg.blankIsNotNo ? logged : prescribed;
     const wsum  = sum(pool.map(d=>d.load));
-    const score = wsum ? sum(pool.map(d => d.load * (d.score === null ? 0 : d.score))) / wsum : null;
+    const score = grades ? grades[w-1].score
+                : wsum ? sum(pool.map(d => d.load * (d.score === null ? 0 : d.score))) / wsum : null;
+    const unsettledShare = grades ? grades[w-1].unsettled
+                : wsum ? sum(pool.map(d => (d.log && d.log.b !== 'yes') ? d.load : 0)) / wsum : 0;
 
     /* red flags */
     const flags = [];
@@ -1285,17 +1356,15 @@ function computeProgram(p, cfg){
     const graded = (!future) && (w < p.cur) && (logged.length >= Math.min(cfg.minRunsToScore, prescribed.length));
     if(future){ status='future'; why='Projected — assumes the week is held.'; }
     else if(w === p.cur){ status='active'; why = logged.length+' of '+prescribed.length+' sessions logged so far.'; }
-    else if(!graded || score === null){ status='nodata'; why='Too few sessions logged — volume carried forward unchanged.'; }
-    else if(score >= A.greenAt){ status='green'; mult = 1+p.inc;
-      why='Score '+score.toFixed(3)+' ≥ '+A.greenAt+' — '+
-          (useLadder ? 'step up to rung '+(nextRungOf == null ? rungs[w-1] : nextRungOf)
-                     : 'increase '+pct(p.inc)+'%')+'.'; }
-    else if(score >= A.yellowAt){ status='yellow'; mult = 1;
-      why='Score '+score.toFixed(3)+' ≥ '+A.yellowAt+' — '+
-          (useLadder ? 'hold on rung '+rungs[w-1] : 'hold volume')+'.'; }
-    else { status='red'; mult = 1-A.deload;
-      why='Score '+score.toFixed(3)+' < '+A.yellowAt+' — '+
-          (useLadder ? deloadText(rungs[w-1], nextRungOf) : 'reduce '+pct(A.deload)+'%')+'.'; }
+    else if(!graded || score === null){ status='nodata';
+      why = gradeReason('nodata', score, 0, 0, A, useLadder, rungs, w, nextRungOf, p); }
+    else {
+      const priorHolds = holdRun;
+      status = grades ? grades[w-1].status : gradeWeek(score, unsettledShare, holdRun, A);
+      holdRun = (status === 'yellow') ? holdRun + 1 : 0;
+      why = gradeReason(status, score, unsettledShare, priorHolds, A, useLadder, rungs, w, nextRungOf, p);
+      mult = status === 'green' ? 1+p.inc : status === 'yellow' ? 1 : 1-A.deload;
+    }
 
     let overridden = null;
     if(cfg.safetyStop && flags.some(f=>f.sev==='high') && (status==='green'||status==='yellow'||status==='active')){
@@ -1306,7 +1375,7 @@ function computeProgram(p, cfg){
 
     let next = volOn ? vol*mult : vol;   // hold the starting distance until the ramp begins
     const stepCap = (UNITS[unit] || UNITS.km).step;
-    if(stepCap && next-vol > stepCap){ next = vol+stepCap; why += ' Step capped at '+fmtVol(stepCap, unit)+'.'; }
+    if(!useLadder && stepCap && next-vol > stepCap){ next = vol+stepCap; why += ' Step capped at '+fmtVol(stepCap, unit)+'.'; }
     if(cfg.capAtGoal) next = Math.min(next, goalTotal);
 
     /* every exercise moves on the same decision, each in its own units */
@@ -2240,14 +2309,23 @@ function mathsCard(p, prog){
         '<span class="v">'+doseText(st, dose)+' \u00b7 steps up every '+need+' green week'+(need>1?'s':'')+'</span></div>';
     }).join('')+
 
-    '<span class="lbl" style="margin-top:14px">How answers are weighted</span>'+
+    '<span class="lbl" style="margin-top:14px">How a session is scored</span>'+
     '<div class="calc" style="margin-bottom:10px">'+
-      'score = '+f(A.wDuring)+' \u00d7 (1 \u2212 '+A.painStep+' \u00d7 P<sub>during</sub>)<br>'+
-      '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;+ '+f(A.wAfter)+' \u00d7 (1 \u2212 '+A.painStep+' \u00d7 P<sub>after</sub>)<br>'+
-      '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;+ '+f(A.wBaseline)+' \u00d7 (settled ? 1 : '+A.baselineNoValue+')</div>'+
-    '<div class="kv"><span class="k">\u2265 '+A.greenAt+'</span><span class="v" style="color:var(--green)">increase '+pct(p.inc)+'%</span></div>'+
-    '<div class="kv"><span class="k">\u2265 '+A.yellowAt+'</span><span class="v" style="color:var(--amber)">hold</span></div>'+
-    '<div class="kv"><span class="k">below '+A.yellowAt+'</span><span class="v" style="color:var(--red)">reduce '+pct(A.deload)+'%</span></div>'+
+      'score = ( '+f(A.wDuring)+' × (1 − '+A.painStep+' × P<sub>during</sub>)<br>'+
+      '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;+ '+f(A.wAfter)+' × (1 − '+A.painStep+' × P<sub>next morning</sub>) )<br>'+
+      '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\u00f7 '+f(A.wDuring + A.wAfter)+'</div>'+
+    '<span class="lbl">Where the two lines fall</span>'+
+    '<div class="kv"><span class="k">progress up to</span><span class="v" style="color:var(--green)">'+
+      A.okDuring+'/10 during, '+A.okAfter+'/10 next morning</span></div>'+
+    '<div class="kv"><span class="k">hold up to</span><span class="v" style="color:var(--amber)">'+
+      A.holdDuring+'/10 during, '+A.holdAfter+'/10 next morning</span></div>'+
+    '<div class="kv"><span class="k">worse than that</span><span class="v" style="color:var(--red)">'+
+      (p.startRung ? 'ease back a rung' : 'reduce '+pct(A.deload)+'%')+'</span></div>'+
+    '<div class="note" style="margin:10px 0">Those two answers are the whole setting. RAMP scores them '+
+      '('+A.greenAt.toFixed(3)+' and '+A.yellowAt.toFixed(3)+') so a week of mixed sessions can be weighed, '+
+      'but nobody has to reason about the numbers.</div>'+
+    '<div class="kv"><span class="k">did not settle</span><span class="v">one grade more cautious</span></div>'+
+    '<div class="kv"><span class="k">two holds in a row</span><span class="v">eases back instead</span></div>'+
     '<div class="kv"><span class="k">red flag at</span><span class="v">'+A.flagPainDuring+'/10 during \u00b7 '+A.flagPainAfter+'/10 after</span></div>'+
 
     '<div class="note" style="margin-top:12px">'+
@@ -2696,36 +2774,43 @@ function renderAdmin(){
 
 /* one place that turns an algorithm into something readable, used by the
    protocol editor and by the clinic-defaults page */
-function plainRules(A){
+function plainRules(A0){
+  const A = Object.assign({}, A0, bandsFor(A0));
   const evenPain = Math.abs(A.wDuring - A.wAfter) < 1e-9 && A.wDuring > 0 && A.painStep > 0;
-  const combinedFor = function(th){ return (2 - (th - A.wBaseline)/A.wDuring) / A.painStep; };
+  const combinedFor = function(th){ return (2 - th*(A.wDuring+A.wAfter)/A.wDuring) / A.painStep; };
   const gMax = evenPain ? Math.floor(combinedFor(A.greenAt) + 1e-9) : null;
   const hMax = evenPain ? Math.floor(combinedFor(A.yellowAt) + 1e-9) : null;
-  const best = A.wDuring + A.wAfter + A.wBaseline * A.baselineNoValue;
-  const verdict = best >= A.greenAt ? 'can still progress'
-                : best >= A.yellowAt ? 'can at best hold \u2014 it can never progress'
-                : 'always reduces the volume';
-  let h = '';
+  let h = '<li>A week <b>progresses</b> while pain stays at or under <b>'+A.okDuring+'/10 during</b> and '+
+          '<b>'+A.okAfter+'/10 the next morning</b>.</li>'+
+          '<li>Past that but at or under <b>'+A.holdDuring+'/10</b> and <b>'+A.holdAfter+'/10</b>, it <b>holds</b>. '+
+          'Worse than that, it <b>eases back</b>.</li>';
   if(evenPain && gMax >= 0 && gMax <= 20){
-    h += '<li>If symptoms settle, a week <b>progresses</b> when pain during plus pain next morning totals <b>'+gMax+' or less</b> out of 20.</li>'+
-         '<li>Totalling <b>'+(hMax > gMax + 1 ? (gMax+1)+'\u2013'+hMax : String(hMax))+'</b> <b>holds</b>. Higher <b>reduces</b> by '+pct(A.deload)+'%.</li>';
+    h += '<li>The two answers are weighted the same here, so that is the same as saying '+
+         'the two added together must total <b>'+gMax+' or less</b> to progress, and '+
+         '<b>'+(hMax > gMax + 1 ? (gMax+1)+'–'+hMax : String(hMax))+'</b> to hold.</li>';
   } else {
-    h += '<li>The two pain answers carry different weights, so there is no single combined cut-off. '+
-         (A.wAfter > A.wDuring ? 'The <b>next morning</b> matters more.' : 'Pain <b>during</b> matters more.')+' Read the grid.</li>';
+    h += '<li>The two answers carry different weights here '+
+         (A.wAfter > A.wDuring ? 'and the <b>next morning</b> matters more' : 'and pain <b>during</b> matters more')+
+         ', so the boundary is a diagonal rather than a total. Read the grid.</li>';
   }
-  h += '<li>If symptoms have <b>not</b> settled, the best a session scores is <b>'+best.toFixed(2)+'</b>, so it '+verdict+'.</li>';
+  h += '<li>If symptoms did <b>not</b> settle after most sessions, the week drops one grade. '+
+       'Low pain is never on its own permission to climb.</li>';
+  h += '<li><b>'+((A.holdsBeforeDrop||2))+' holds in a row</b> eases back instead, because the rung is the problem.</li>';
   h += '<li>A ladder step is earned after <b>'+(A.dwell||2)+' consecutive green weeks</b>, and lost on any red week.</li>';
   return h;
 }
 
-function decisionMatrix(A, settled){
+function decisionMatrix(A0, settled){
+  const A = Object.assign({}, A0, bandsFor(A0));
   let h = '<table class="mx"><tbody>';
   for(let pd = 0; pd <= 10; pd++){
     h += '<tr><th>'+pd+'</th>';
     for(let pa = 0; pa <= 10; pa++){
-      const sc = runScore({pd:pd, pa:pa, b: settled ? 'yes' : 'no'}, A);
-      const k  = sc >= A.greenAt ? 'g' : (sc >= A.yellowAt ? 'a' : 'r');
-      h += '<td class="mx-'+k+'" title="during '+pd+', next morning '+pa+' \u2192 '+sc.toFixed(3)+'"></td>';
+      const sc = painScore(A, pd, pa);
+      const g  = gradeWeek(sc, settled ? 0 : 1, 0, A);
+      const k  = g === 'green' ? 'g' : g === 'yellow' ? 'a' : 'r';
+      h += '<td class="mx-'+k+'" title="during '+pd+', next morning '+pa+' \u2192 '+sc.toFixed(3)+
+           ', '+{green:'progress', yellow:'hold', red:'ease back'}[g]+'"></td>';
     }
     h += '</tr>';
   }
@@ -2874,9 +2959,9 @@ function protocolComposer(){
         '<div class="sh">'+inj.name+'</div></div></div><div class="sect-b">'+
         '<div class="metrow"><span class="mk">Pain during the session</span><span class="mv">'+A.wDuring.toFixed(2)+'</span></div>'+
         '<div class="metrow"><span class="mk">Pain the next morning</span><span class="mv">'+A.wAfter.toFixed(2)+'</span></div>'+
-        '<div class="metrow"><span class="mk">Symptoms settled</span><span class="mv">'+A.wBaseline.toFixed(2)+'</span></div>'+
         '<div class="metrow"><span class="mk">Cost of one pain point</span><span class="mv">'+A.painStep+'</span></div>'+
-        '<div class="metrow"><span class="mk">Progress / hold</span><span class="mv">'+A.greenAt+' / '+A.yellowAt+'</span></div>'+
+        '<div class="metrow"><span class="mk">Progress up to</span><span class="mv">'+A.okDuring+'/'+A.okAfter+'</span></div>'+
+        '<div class="metrow"><span class="mk">Hold up to</span><span class="mv">'+A.holdDuring+'/'+A.holdAfter+'</span></div>'+
         '<div class="metrow"><span class="mk">Deload</span><span class="mv">'+pct(A.deload)+'%</span></div>'+
         '<div class="metrow"><span class="mk">Red flag</span><span class="mv">'+A.flagPainDuring+'/10 during, '+A.flagPainAfter+'/10 after</span></div>'+
         '<div class="note" style="margin-top:12px">'+
@@ -3142,13 +3227,13 @@ function protocolEditor(){
     '<div class="sect"><div class="sect-h"><span class="sect-n">4</span><div style="flex:1"><h3>How their answers change it</h3>'+
       '<div class="sh">This algorithm belongs to this protocol</div></div></div><div class="sect-b">'+
       '<span class="lbl">Weighting of the three answers</span>'+
-      ['wDuring:Pain during','wAfter:Pain next morning','wBaseline:Symptoms settled'].map(function(r){
+      ['wDuring:Pain during','wAfter:Pain next morning'].map(function(r){
         const k = r.split(':')[0];
         return '<div class="setrow"><div style="flex:1"><div class="st">'+r.split(':')[1]+'</div></div>'+
           '<input type="number" step="0.05" min="0" max="1" id="pe-'+k+'" value="'+A[k]+'" style="width:78px;padding:6px 8px;border:1px solid var(--line);border-radius:7px;text-align:right;font-weight:600"></div>';
       }).join('')+
       '<span class="lbl" style="margin-top:14px">Thresholds</span>'+
-      ['painStep:Cost of one pain point','greenAt:Progress at or above','yellowAt:Hold at or above','deload:Reduce by','dwell:Green weeks per ladder step','flagPainDuring:Red flag \u2014 pain during','flagPainAfter:Red flag \u2014 next morning'].map(function(r){
+      ['painStep:Cost of one pain point','okDuring:Progress up to, pain during','okAfter:Progress up to, next morning','holdDuring:Hold up to, pain during','holdAfter:Hold up to, next morning','deload:Reduce by','dwell:Green weeks per ladder step','flagPainDuring:Red flag \u2014 pain during','flagPainAfter:Red flag \u2014 next morning'].map(function(r){
         const k = r.split(':')[0];
         const st = (k==='dwell'||k==='flagPainDuring'||k==='flagPainAfter') ? '1' : '0.005';
         return '<div class="setrow"><div style="flex:1"><div class="st">'+r.split(':')[1]+'</div></div>'+
@@ -3202,7 +3287,7 @@ function protocolEditor(){
   txt('pe-painmode', function(e){ D.painMode = e.target.value; render(); });
   txt('pe-sessionload', function(e){ A.sessionLoad = Math.max(0, +e.target.value||0); render(); });
 
-  ['wDuring','wAfter','wBaseline','painStep','greenAt','yellowAt','deload','dwell','flagPainDuring','flagPainAfter']
+  ['wDuring','wAfter','painStep','okDuring','okAfter','holdDuring','holdAfter','deload','dwell','flagPainDuring','flagPainAfter']
     .forEach(function(k){
       num('pe-'+k, function(e){
         A[k] = +e.target.value || 0;
@@ -3259,8 +3344,10 @@ function protocolEditor(){
     if(!D.streams.length){ toast('A protocol needs at least one stream'); return; }
     const payload = { name:D.name, region:D.region, note:D.note || 'No guidance set.',
                       red:D.red, inc:D.inc, weeks:D.weeks, painMode:D.painMode||'session',
-                      algo:{ wDuring:A.wDuring, wAfter:A.wAfter, wBaseline:A.wBaseline, painStep:A.painStep,
-                             greenAt:A.greenAt, yellowAt:A.yellowAt, deload:A.deload, dwell:A.dwell,
+                      algo:{ wDuring:A.wDuring, wAfter:A.wAfter, painStep:A.painStep,
+                             okDuring:A.okDuring, okAfter:A.okAfter,
+                             holdDuring:A.holdDuring, holdAfter:A.holdAfter,
+                             deload:A.deload, dwell:A.dwell,
                              sessionLoad:A.sessionLoad, flagPainDuring:A.flagPainDuring, flagPainAfter:A.flagPainAfter },
                       streams:D.streams };
     if(isNew){ PROTOCOLS.push(Object.assign({id:'x'+(PROTOCOLS.length+1), uses:0}, payload)); toast('Protocol created \u2014 audit logged'); }
@@ -3289,9 +3376,10 @@ function adAlgorithm(){
     ['maxWeeklyStepKm','Cap the absolute size of one weekly jump',
      'A 15% increase on 60 km is 9 km in one week. A percentage rule needs an absolute ceiling.']
   ];
-  const dflt = ['wDuring','wAfter','wBaseline','painStep','greenAt','yellowAt','deload','dwell'];
-  const labels = { wDuring:'Pain during', wAfter:'Next morning', wBaseline:'Settled',
-                   painStep:'Pain step', greenAt:'Progress at', yellowAt:'Hold at',
+  const dflt = ['wDuring','wAfter','painStep','okDuring','okAfter','holdDuring','holdAfter','deload','dwell'];
+  const labels = { wDuring:'Pain during', wAfter:'Next morning', painStep:'Pain step',
+                   okDuring:'Progress to', okAfter:'Progress to, am',
+                   holdDuring:'Hold to', holdAfter:'Hold to, am',
                    deload:'Deload', dwell:'Weeks per step' };
 
   $('#adminBody').innerHTML =
@@ -3302,7 +3390,7 @@ function adAlgorithm(){
         '<div style="display:flex;gap:12px;margin-bottom:14px">'+
           '<div style="flex:1;border:1px solid var(--line);border-radius:11px;padding:13px">'+
             '<div style="font-weight:680;font-size:13px;margin-bottom:5px">The protocol owns</div>'+
-            '<div style="font-size:12.5px;color:var(--ink-2);line-height:1.65">How sensitive the grading is: the weighting of the three answers, the progress and hold thresholds, the deload size, how many green weeks earn a ladder step, and where a red flag sits.</div>'+
+            '<div style="font-size:12.5px;color:var(--ink-2);line-height:1.65">How sensitive the grading is: how the two pain answers are weighted, the two answers that define progress and hold, the deload size, how many green weeks earn a ladder step, and where a red flag sits.</div>'+
             '<div style="font-size:12px;color:var(--muted);margin-top:8px">Different injuries need different sensitivity, so this is set per protocol.</div></div>'+
           '<div style="flex:1;border:1px solid var(--line);border-radius:11px;padding:13px;background:var(--surface-2)">'+
             '<div style="font-weight:680;font-size:13px;margin-bottom:5px">The clinic owns</div>'+
@@ -3331,8 +3419,10 @@ function adAlgorithm(){
     '<div class="grid g2" style="align-items:start">'+
       '<div class="card"><div class="card-h"><h3>Clinic defaults</h3>'+
         '<span class="hint">used when a protocol does not say otherwise</span></div><div class="card-b">'+
-        [['wDuring','Pain during the session'],['wAfter','Pain the next morning'],['wBaseline','Symptoms back to baseline'],
-         ['painStep','Cost of one point of pain'],['greenAt','Progress threshold'],['yellowAt','Hold threshold'],
+        [['wDuring','Pain during the session'],['wAfter','Pain the next morning'],
+         ['painStep','Cost of one point of pain'],
+         ['okDuring','Progress up to, pain during'],['okAfter','Progress up to, next morning'],
+         ['holdDuring','Hold up to, pain during'],['holdAfter','Hold up to, next morning'],
          ['deload','Deload amount'],['dwell','Green weeks per ladder step']].map(function(r){
           return '<div class="setrow"><div style="flex:1"><div class="st">'+r[1]+'</div></div>'+
             '<input type="number" step="0.005" value="'+CFG[r[0]]+'" data-cfg="'+r[0]+'" style="width:78px;padding:6px 8px;border:1px solid var(--line);border-radius:7px;text-align:right;font-weight:600"></div>';
