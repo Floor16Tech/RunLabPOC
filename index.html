@@ -230,6 +230,9 @@ tbody tr.click:hover{background:var(--surface-2)}
 .bar .fill{width:100%;border-radius:6px 6px 3px 3px;min-height:3px;flex:0 1 auto;transition:height .35s}
 .bar .cap{position:absolute;bottom:0;left:0;right:0;text-align:center;font-size:10px;color:var(--muted);font-weight:650}
 .bar .amt{flex:0 0 auto;margin-bottom:3px;font-size:10.5px;font-weight:680}
+/* the goal line spans the chart. On a phone the chart scrolls sideways, so it has
+   to span the scrolled width instead: --n bars of 21px with a 6px gap. */
+.goalline{position:absolute;left:0;width:100%;border-top:1.5px dashed #a1a1aa;pointer-events:none}
 .kv{display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px dashed var(--line);font-size:13px}
 .kv:last-child{border-bottom:0}
 .kv .k{color:var(--muted)}
@@ -326,6 +329,7 @@ tbody tr.click:hover{background:var(--surface-2)}
   .dayrow{gap:5px}
   .bar-wrap{overflow-x:auto;overflow-y:hidden}
   .bar{min-width:21px}
+  .goalline{width:max(100%, calc(var(--n) * 27px))}
   .bar .amt{font-size:9px}
   [data-goal]{min-width:0;font-size:15px;padding:9px 1px}
 
@@ -1153,8 +1157,18 @@ function computeProgram(p, cfg){
     out.push({ w, rung: useLadder ? rungs[w-1] : null, phase: R ? R.phase : null,
                volText: useLadder ? (volOn ? rungWeekText(R, pace) : '\u2014') : fmtVol(volOn?vol:0, unit),
                vol: volOn ? vol : 0, volOn, days, prescribed, logged, missed, score, status, mult, why, flags, start,
-               overridden, atGoal: Math.abs(vol-goalTotal) < 0.05,
-               pctGoal: goalTotal ? vol/goalTotal : 0, nextVol: next,
+               overridden,
+               /* on the ladder, "how far along" is a position on the ladder. Comparing
+                  this week's volume with the goal is meaningless while the week is
+                  measured in walking minutes and the goal in kilometres. */
+               atGoal:  useLadder ? rungs[w-1] >= (p.goalRung || LADDER_TOP)
+                                  : Math.abs(vol-goalTotal) < 0.05,
+               pctGoal: useLadder ? rungs[w-1]/(p.goalRung || LADDER_TOP)
+                                  : (goalTotal ? vol/goalTotal : 0),
+               nextVol: next,
+               nextText: useLadder ? (w < p.weeks ? rungWeekText(rungAt(rungs[w]), pace) : '\u2014')
+                                   : fmtVol(next, unit),
+               nextRung: (useLadder && w < p.weeks) ? rungs[w] : null,
                doses: weekDoses, moves: moves });
     vol = next;
   }
@@ -1361,29 +1375,43 @@ function wToday(p, prog, wk){
 /* ---------------- Progress ---------------- */
 function wProgress(p, prog, wk){
   const graded = prog.weeks.filter(function(w){ return ['green','yellow','red','flag'].indexOf(w.status)>=0; });
-  const maxV   = Math.max.apply(null, prog.weeks.map(function(w){return w.vol;}).concat([prog.goalTotal]));
-  const scale  = maxV * 1.18;                       // headroom for the value labels
   const doneN  = wk.logged.length, totN = wk.prescribed.length;
   const frac   = totN ? doneN/totN : 0, C = 2*Math.PI*46;
-  const totalKm = prog.weeks.slice(0,p.cur).reduce(function(a,w){ return a + sum(w.logged.map(function(d){return d.km;})); },0);
+  const sessions = prog.weeks.slice(0,p.cur).reduce(function(a,w){ return a + w.logged.length; },0);
+  /* a week changes unit as the phase changes: minutes of walking, then minutes of
+     running, then kilometres. Progress is therefore plotted as the step of the
+     ladder, the one measure that means the same thing in all three phases. */
+  const steps  = wk.rung != null;
+  const topStep= p.goalRung || LADDER_TOP;
+  /* a climb from rung 20 to 23 is a real climb, so the axis sits just under the
+     lowest rung they have been on rather than at zero, where it would flatten */
+  const base   = steps ? Math.max(0, Math.min.apply(null, prog.weeks.map(function(w){return w.rung||1;})) - 1) : 0;
+  const maxV   = Math.max.apply(null, prog.weeks.map(function(w){return w.vol;}).concat([prog.goalTotal]));
+  const scale  = steps ? (topStep - base)*1.14 : maxV*1.18;
+  const line   = steps ? topStep - base : prog.goalTotal;
 
   const tile = function(k,v,d){ return '<div class="card stat"><div class="k">'+k+'</div><div class="v">'+v+'</div><div class="d">'+d+'</div></div>'; };
 
   return '<div class="wstats">'+
       tile('This week', wk.volText || fmtVol(wk.vol, prog.unit), 'across '+totN+' sessions')+
-      tile('Of your goal', pct(wk.pctGoal)+'%', 'goal is '+fmtVol(prog.goalTotal, prog.unit)+' per week')+
+      (steps
+        ? tile('Where you are', 'Step '+wk.rung, 'of '+topStep+' on the way to your goal')
+        : tile('Of your goal', pct(wk.pctGoal)+'%', 'goal is '+fmtVol(prog.goalTotal, prog.unit)+' per week'))+
       tile('Weeks completed', graded.length, 'since '+p.since)+
-      tile('Volume logged', fmtVol(totalKm, prog.unit), 'total across the programme')+
+      tile('Sessions logged', sessions, 'total across the programme')+
     '</div>'+
 
     '<div class="wgrid">'+
-      '<div class="pcard"><h4>Your weekly volume</h4><div class="sm" style="margin-bottom:14px">Each bar is one week. The dashed line is your goal of '+fmtVol(prog.goalTotal, prog.unit)+'.</div>'+
+      '<div class="pcard"><h4>'+(steps ? 'Your climb' : 'Your weekly volume')+'</h4><div class="sm" style="margin-bottom:14px">'+
+        (steps ? 'Each bar is one week, and the height is how far up the programme you have climbed. The dashed line is your goal.'
+               : 'Each bar is one week. The dashed line is your goal of '+fmtVol(prog.goalTotal, prog.unit)+'.')+'</div>'+
         '<div class="bar-wrap" style="height:170px;position:relative">'+
-          '<div style="position:absolute;left:0;right:0;bottom:'+(17+ (prog.goalTotal/scale)*145)+'px;border-top:1.5px dashed #a1a1aa;pointer-events:none"></div>'+
+          '<div class="goalline" style="--n:'+prog.weeks.length+';bottom:'+(17+ (line/scale)*145)+'px"></div>'+
           prog.weeks.map(function(w){
-            const h = Math.round((w.vol/scale)*100);
-            return '<div class="bar" title="Week '+w.w+' — '+r1(w.vol)+' km">'+
-              '<div class="amt" style="color:'+(w.w<=p.cur?'var(--ink)':'var(--muted)')+'">'+r1(w.vol)+'</div>'+
+            const val = steps ? (w.rung||1) - base : w.vol;
+            const h = Math.round((Math.max(val, 0.28)/scale)*100);
+            return '<div class="bar" title="Week '+w.w+': '+(w.volText || fmtVol(w.vol, prog.unit))+'">'+
+              '<div class="amt" style="color:'+(w.w<=p.cur?'var(--ink)':'var(--muted)')+'">'+(steps ? (w.rung||1) : r1(val))+'</div>'+
               '<div class="fill" style="height:'+h+'%;background:'+(w.w<=p.cur?STATUS[w.status].col:'#e4e4e7')+'"></div>'+
               '<div class="cap">'+w.w+'</div></div>';
           }).join('') +'</div>'+
@@ -1396,7 +1424,7 @@ function wProgress(p, prog, wk){
               '<circle cx="54" cy="54" r="46" fill="none" stroke="#ececee" stroke-width="11"/>'+
               '<circle cx="54" cy="54" r="46" fill="none" stroke="url(#g1)" stroke-width="11" stroke-linecap="round" stroke-dasharray="'+(C*frac)+' '+C+'"/>'+
               '<defs><linearGradient id="g1" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ff2f37"/><stop offset="1" stop-color="#E31B23"/></linearGradient></defs></svg>'+
-            '<div class="ringlabel"><div class="rv">'+doneN+'/'+totN+'</div><div class="rl">RUNS</div></div></div>'+
+            '<div class="ringlabel"><div class="rv">'+doneN+'/'+totN+'</div><div class="rl">SESSIONS</div></div></div>'+
           '<div class="sm" style="margin-top:14px">'+(doneN>=totN
               ? 'All logged. Nice work.'
               : (totN-doneN)+' still to log this week')+'</div></div>'+
@@ -1405,8 +1433,8 @@ function wProgress(p, prog, wk){
           (graded.length ? graded.slice(-6).map(function(w){
             const words = {green:'Comfortable', yellow:'Manageable', red:'Sore', flag:'Too sore'}[w.status];
             return '<div class="runrow"><div class="dot '+STATUS[w.status].dot+'"></div>'+
-              '<div style="flex:1;min-width:0"><div style="font-weight:640;font-size:13.5px">Week '+w.w+' · '+fmtVol(w.vol, prog.unit)+'</div>'+
-              '<div class="sm">'+w.logged.length+' of '+w.prescribed.length+' runs logged</div></div>'+
+              '<div style="flex:1;min-width:0"><div style="font-weight:640;font-size:13.5px">Week '+w.w+' · '+(w.volText || fmtVol(w.vol, prog.unit))+'</div>'+
+              '<div class="sm">'+w.logged.length+' of '+w.prescribed.length+' sessions logged</div></div>'+
               '<span class="pill '+STATUS[w.status].cls+'">'+words+'</span></div>';
           }).join('') : '<div class="sm">Nothing to show yet — this fills in once you finish your first week.</div>')+
         '</div></div></div>';
@@ -1414,6 +1442,7 @@ function wProgress(p, prog, wk){
 
 /* ---------------- Plan ---------------- */
 function wPlan(p, prog, wk){
+  const steps = wk.rung != null;
   return '<div class="wgrid">'+
     '<div class="pcard"><h4>Week '+p.cur+'</h4>'+
       '<div class="sm" style="margin-bottom:12px">'+fmtDate(wk.start)+' – '+fmtDate(wk.days[6].date)+' · '+
@@ -1440,8 +1469,9 @@ function wPlan(p, prog, wk){
           '<div class="sm">It is built from how this week actually felt, so there is nothing to see yet.</div></div></div></div>'+
 
       '<div class="pcard"><h4>Your goal</h4><div class="sm" style="margin-bottom:10px">Agreed with Maciek on '+p.since+'</div>'+
-        '<div class="kv"><span class="k">Weekly volume</span><span class="v">'+fmtVol(prog.goalTotal, prog.unit)+'</span></div>'+
-        '<div class="kv"><span class="k">Running days</span><span class="v">'+prog.runDays.map(function(i){return DAYS[i];}).join(' · ')+'</span></div>'+
+        '<div class="kv"><span class="k">Working towards</span><span class="v">'+fmtVol(prog.goalTotal, prog.unit)+' a week</span></div>'+
+        (steps ? '<div class="kv"><span class="k">This week</span><span class="v">'+(wk.volText||'')+'</span></div>' : '')+
+        '<div class="kv"><span class="k">Training days</span><span class="v">'+prog.runDays.map(function(i){return DAYS[i];}).join(' · ')+'</span></div>'+
         '<div class="kv"><span class="k">Programme length</span><span class="v">'+p.weeks+' weeks</span></div>'+
         '<div class="kv"><span class="k">Presentation</span><span class="v">'+p.injury+'</span></div>'+
         '<div class="kv"><span class="k">Easy pace</span><span class="v">'+prog.paceBand+'</span></div></div>'+
@@ -1459,7 +1489,7 @@ function wAccount(p, prog, wk){
     '<div>'+
       '<div class="pcard" style="display:flex;align-items:center;gap:16px">'+
         '<div class="avatar" style="background:'+p.colour+';width:56px;height:56px;font-size:19px">'+initials(p.name)+'</div>'+
-        '<div><h4 style="font-size:17px">'+p.name+'</h4><div class="sm">'+p.injury+' · age '+p.age+'</div>'+
+        '<div><h4 style="font-size:17px">'+p.name+'</h4><div class="sm">'+p.injury+(p.age ? ' · age '+p.age : '')+'</div>'+
         '<div class="pill pill-b" style="margin-top:7px">'+prog.protocol.name+'</div></div></div>'+
 
       '<div class="pcard"><h4>Your physiotherapist</h4>'+
@@ -1697,7 +1727,7 @@ function renderPatientDetail(){
     '<div style="display:flex;align-items:center;gap:14px;margin-bottom:18px;flex-wrap:wrap">'+
       '<button class="btn btn-sm" id="btnBack">‹ Caseload</button>'+
       '<div class="avatar" style="background:'+p.colour+';width:42px;height:42px;font-size:15px">'+initials(p.name)+'</div>'+
-      '<div style="flex:1 1 190px;min-width:0"><h2 style="font-size:19px">'+p.name+' <span style="font-weight:500;color:var(--muted);font-size:14px">· '+p.age+'</span></h2>'+
+      '<div style="flex:1 1 190px;min-width:0"><h2 style="font-size:19px">'+p.name+' '+(p.age ? '<span style="font-weight:500;color:var(--muted);font-size:14px">· '+p.age+'</span>' : '')+'</h2>'+
       '<div style="font-size:12.5px;color:var(--muted)">'+p.injury+' · '+prog.protocol.name+' · started '+p.since+'</div></div>'+
       '<button class="btn btn-sm" data-msgpt="'+p.id+'">'+
         '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>Message</button>'+
@@ -1706,13 +1736,19 @@ function renderPatientDetail(){
     '</div>'+
 
     '<div class="grid sgrid" style="margin-bottom:18px">'+
-      statTile('Week '+p.cur+' volume', wk.volText || fmtVol(wk.vol, prog.unit), pct(wk.pctGoal)+'% of the '+fmtVol(prog.goalTotal, prog.unit)+' goal') +
-      statTile('Runs logged', wk.logged.length+' / '+wk.prescribed.length, 'this week') +
+      statTile('Week '+p.cur, wk.volText || fmtVol(wk.vol, prog.unit),
+        wk.rung != null ? 'rung '+wk.rung+' of '+(p.goalRung||LADDER_TOP)+', '+pct(wk.pctGoal)+'% of the way'
+                        : pct(wk.pctGoal)+'% of the '+fmtVol(prog.goalTotal, prog.unit)+' goal') +
+      statTile('Sessions logged', wk.logged.length+' / '+wk.prescribed.length, 'this week') +
       statTile('Last week score', prev && prev.score!==null ? prev.score.toFixed(3) : '—',
                prev ? prev.why : 'no completed week yet',
                prev ? STATUS[prev.status].col : '') +
-      statTile('Next week', prev||wk ? fmtVol(wk.nextVol, prog.unit) : '—',
-               wk.nextVol>wk.vol ? '+'+fmtVol(wk.nextVol-wk.vol, prog.unit) : (wk.nextVol<wk.vol ? '-'+fmtVol(wk.vol-wk.nextVol, prog.unit) : 'held')) +
+      statTile('Next week', wk.nextText || fmtVol(wk.nextVol, prog.unit),
+               wk.nextRung != null
+                 ? (wk.nextRung > wk.rung ? 'steps up to rung '+wk.nextRung
+                    : wk.nextRung < wk.rung ? 'eases back to rung '+wk.nextRung : 'holds at rung '+wk.rung)
+                 : (wk.nextVol>wk.vol ? '+'+fmtVol(wk.nextVol-wk.vol, prog.unit)
+                    : wk.nextVol<wk.vol ? '-'+fmtVol(wk.vol-wk.nextVol, prog.unit) : 'held')) +
     '</div>'+
 
     (wk.flags.length ? '<div class="card" style="margin-bottom:18px"><div class="card-h"><h3>Flags this week</h3>'+
@@ -1766,7 +1802,7 @@ function weekTable(p, prog){
         '<td class="mono" style="font-size:12.5px">'+w.logged.length+'/'+w.prescribed.length+'</td>'+
         '<td class="mono">'+(w.score!==null ? '<b>'+w.score.toFixed(3)+'</b>' : '<span style="color:var(--muted)">—</span>')+'</td>'+
         '<td><span class="pill '+st.cls+'"><span class="dot '+st.dot+'"></span>'+st.lbl+'</span></td>'+
-        '<td class="mono" style="font-size:12.5px">'+(w.status==='future'?'<span style="color:var(--muted)">'+fmtVol(w.nextVol, prog.unit)+'</span>':'×'+w.mult.toFixed(2)+' → '+fmtVol(w.nextVol, prog.unit))+'</td>'+
+        '<td class="mono" style="font-size:12.5px">'+(w.status==='future'?'<span style="color:var(--muted)">'+(w.nextText||fmtVol(w.nextVol, prog.unit))+'</span>':'×'+w.mult.toFixed(2)+' → '+(w.nextText||fmtVol(w.nextVol, prog.unit)))+'</td>'+
         '<td style="text-align:right"><button class="btn btn-sm" data-override="'+w.w+'">Override</button></td></tr>';
 
       if(open){
@@ -1912,7 +1948,7 @@ function ladderControls(p, pre){
 
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">'+
       '<label class="field" style="margin:0"><span class="lbl">Over how many weeks</span>'+
-        '<input type="number" id="'+pre+'-weeks" min="2" max="52" value="'+p.weeks+'"></label>'+
+        '<input type="number" id="'+pre+'-weeks2" min="2" max="52" value="'+p.weeks+'"></label>'+
       '<div><span class="lbl">Rungs climbed per good week</span>'+
         '<div class="slrow"><input type="range" class="slider" id="'+pre+'-inc" min="0" max="8" step="1" value="'+Math.round(inc*4)+'">'+
         '<span class="slval" id="'+pre+'-inc-out">'+inc.toFixed(2).replace(/0$/,'')+'</span></div></div>'+
@@ -1965,11 +2001,17 @@ function weeksToGoal(p){
 }
 
 function volumeChart(p, prog, maxV){
-  return '<div class="card" style="margin-bottom:16px"><div class="card-h"><h3>Volume trajectory</h3></div><div class="card-b">'+
+  const steps = prog.weeks[0] && prog.weeks[0].rung != null;
+  const base  = steps ? Math.max(0, Math.min.apply(null, prog.weeks.map(function(w){return w.rung||1;})) - 1) : 0;
+  const top   = ((p.goalRung || LADDER_TOP) - base)*1.14, vScale = maxV*1.18;
+  return '<div class="card" style="margin-bottom:16px"><div class="card-h"><h3>'+
+    (steps ? 'Ladder trajectory' : 'Volume trajectory')+'</h3>'+
+    '</div><div class="card-b">'+
     '<div class="bar-wrap" style="height:150px">'+ prog.weeks.map(function(w){
-      const h = Math.round((w.vol/(maxV*1.18))*100);
-      return '<div class="bar" title="Week '+w.w+' — '+r1(w.vol)+' km">'+
-        '<div class="amt" style="color:'+(w.w<=p.cur?'var(--ink)':'var(--muted)')+';font-size:9.5px">'+r1(w.vol)+'</div>'+
+      const val = steps ? (w.rung||1) - base : w.vol;
+      const h = Math.round((Math.max(val, 0.28)/(steps ? top : vScale))*100);
+      return '<div class="bar" title="Week '+w.w+': '+(w.volText || fmtVol(w.vol, prog.unit))+'">'+
+        '<div class="amt" style="color:'+(w.w<=p.cur?'var(--ink)':'var(--muted)')+';font-size:9.5px">'+(steps ? (w.rung||1) : r1(val))+'</div>'+
         '<div class="fill" style="height:'+h+'%;background:'+STATUS[w.status].col+';'+(w.w>p.cur?'opacity:.55':'')+'"></div>'+
         '<div class="cap">'+w.w+'</div></div>';
     }).join('') +'</div>'+
@@ -1993,8 +2035,14 @@ function mathsCard(p, prog){
 
     '<span class="lbl">What the patient does</span>'+
     prog.streams.map(function(st){
-      if(st.type==='volume') return '<div class="kv"><span class="k">'+st.name+'</span>'+
-        '<span class="v">'+fmtVol(prog.goalTotal, prog.unit)+' goal \u00b7 +'+pct(p.inc)+'% per green week</span></div>';
+      if(st.type==='volume'){
+        const onLadder = prog.current && prog.current.rung != null;
+        return '<div class="kv"><span class="k">'+st.name+'</span>'+
+          '<span class="v">'+(onLadder
+            ? 'rung '+prog.current.rung+' of '+(p.goalRung||LADDER_TOP)+' \u00b7 +'+
+              (p.incline===undefined?1:p.incline)+' per green week'
+            : fmtVol(prog.goalTotal, prog.unit)+' goal \u00b7 +'+pct(p.inc)+'% per green week')+'</span></div>';
+      }
       const dose = prog.current.doses[st.key];
       const need = st.every || (st.type==='ladder' ? (A.dwell||2) : 1);
       return '<div class="kv"><span class="k">'+st.name+'</span>'+
@@ -2053,7 +2101,7 @@ function bindBuilder(p){
     pf.onchange = function(){ p.paceFast = (+pf.value)/4; if(p.paceSlow < p.paceFast) p.paceSlow = p.paceFast; render(); };
     ps.onchange = function(){ p.paceSlow = Math.max((+ps.value)/4, p.paceFast); render(); };
   }
-  const rst = $('#bd-start'), rgl = $('#bd-goal'), rin = $('#bd-inc'), rwk = $('#bd-weeks');
+  const rst = $('#bd-start'), rgl = $('#bd-goal'), rin = $('#bd-inc'), rwk = $('#bd-weeks2');
   const paintLadder = function(){
     const st = +rst.value, gl = +rgl.value, ic = (+rin.value)/4, wks = Math.max(2, +rwk.value||12);
     $('#bd-start-out').textContent = rungWeekText(rungAt(st), paceOf(p));
@@ -2183,6 +2231,7 @@ function newProgramme(){
   const N = STATE.newProg = STATE.newProg || {step:1, name:'', injury:null, activity:null, unit:null,
                                               goalWeek:0, goalSession:0, days:[], longDay:6,
                                               paceFast:6.0, paceSlow:7.0,
+                                              startRung:1, goalRung:LADDER_TOP, incline:1,
                                               goal:[0,0,0,0,0,0,0], red:null, inc:null, weeks:null};
   const nsync = function(){ N.goal = distributeGoal(N.goalWeek, N.goalSession, N.days, N.longDay); };
   nsync();
@@ -2264,9 +2313,7 @@ function newProgramme(){
   }
 
   if(N.step === 3 && inj && act){
-    const startRx = sessionPrescription(
-      distributeGoal(N.goalWeek*(1-N.red), N.goalSession*(1-N.red), N.days, N.longDay)[N.longDay],
-      unit, act.pace || null, 20);
+    const sr = rungAt(N.startRung), gr = rungAt(N.goalRung);
     body =
       '<div class="grid dgrid" style="align-items:start"><div>'+
 
@@ -2274,29 +2321,24 @@ function newProgramme(){
         '<div class="sh">Everything above this point</div></div></div><div class="sect-b">'+
         '<div class="metrow"><span class="mk">Treating</span><span class="mv">'+inj.name+'</span></div>'+
         '<div class="metrow"><span class="mk">Getting back to</span><span class="mv">'+act.name+'</span></div>'+
-        '<div class="metrow"><span class="mk">Goal each week</span><span class="mv">'+fmtVol(N.goalWeek, unit)+'</span></div>'+
-        '<div class="metrow"><span class="mk">Longest session</span><span class="mv">'+fmtVol(N.goalSession, unit)+'</span></div>'+
+        '<div class="metrow"><span class="mk">Aiming at</span><span class="mv">'+fmtVol(N.goalWeek, unit)+' a week</span></div>'+
+        '<div class="metrow"><span class="mk">That is rung</span><span class="mv">'+N.goalRung+' of '+LADDER_TOP+'</span></div>'+
         '<div class="metrow"><span class="mk">Training days</span><span class="mv">'+N.days.map(function(d){return DAYS[d];}).join(', ')+'</span></div>'+
-        '<div class="metrow"><span class="mk">Programme length</span><span class="mv">'+(N.weeks||12)+' weeks</span></div>'+
-        (startRx ? '<div class="note" style="margin-top:12px"><b>Their first long session</b> works out as '+
-          startRx.text+(startRx.sub ? ' — '+startRx.sub : '')+'. '+
-          (startRx.kind==='interval'
-            ? 'That is small enough that RAMP writes it as walk/run rather than a continuous distance.'
-            : 'Large enough to prescribe as a continuous session.')+'</div>' : '')+
-      '</div></div>'+
+        '<div class="metrow"><span class="mk">Easy pace</span><span class="mv">'+paceBand(N)+'</span></div>'+
+        '<div class="note" style="margin-top:12px">The goal is only a marker. It sets the top of the ladder so RAMP can '+
+        'work out how long the climb takes. It does <b>not</b> decide where they start.</div>'+      '</div></div>'+
 
       '</div><div>'+
 
-      '<div class="sect"><div class="sect-h"><span class="sect-n">6</span><div style="flex:1"><h3>Their ramp</h3>'+
-        '<div class="sh">The only two numbers you set. RAMP handles the rest.</div></div></div><div class="sect-b">'+
+      '<div class="sect"><div class="sect-h"><span class="sect-n">6</span><div style="flex:1"><h3>Where they are now</h3>'+
+        '<div class="sh">And how steep the climb is</div></div></div><div class="sect-b">'+
         paceControls(N, 'np')+
-        (goalTotal > 0
-          ? rampSliders(N.red, N.inc, goalTotal, unit, 'np')+
-            '<div id="np-preview" style="margin-top:16px">'+rampPreview(goalTotal, N.red, N.inc, N.weeks || 12, unit)+'</div>'+
-            '<div class="note" style="margin-top:14px">From here on RAMP only does three things: after each week it reads the pain '+
-            'during and the pain the next morning, then <b>progresses</b>, <b>holds</b> or <b>falls back</b>. '+
-            'The sensitivity comes from '+inj.name.toLowerCase()+', which the clinic set once.</div>'
-          : '<div class="note">Set a goal on the left and the ramp appears here.</div>')+
+        '<div class="note" style="margin-bottom:16px">Set this from what they can do <b>today</b> without stirring symptoms, '+
+        'not from their goal. A badly irritable tendon starts on the walking rungs whether they are aiming at a 5 km or a marathon.</div>'+
+        ladderControls(N, 'np')+
+        '<div class="note" style="margin-top:14px">From here RAMP only does three things: after each week it reads the pain '+
+        'during and the pain the next morning, then <b>progresses</b>, <b>holds</b> or <b>falls back</b>. '+
+        'The sensitivity comes from '+inj.name.toLowerCase()+', which the clinic set once.</div>'+
       '</div></div>'+
 
       '</div></div>';
@@ -2340,10 +2382,12 @@ function newProgramme(){
     N.goalWeek = x.w; N.goalSession = x.s;
     N.days = (x.d || [2,4,6]).slice();
     N.longDay = N.days[N.days.length-1];
+    N.goalRung = x.rung || rungForVolume(N.goalWeek, (N.paceFast+N.paceSlow)/2);
     render(); }; });
   const ngw = $('#np-gw'), ngs = $('#np-gs'), nld = $('#np-ld');
   if(ngw) ngw.onchange = function(){ N.goalWeek = Math.max(0, +ngw.value||0);
-    if(!N.goalSession) N.goalSession = N.goalWeek/Math.max(1,N.days.length); render(); };
+    if(!N.goalSession) N.goalSession = N.goalWeek/Math.max(1,N.days.length);
+    N.goalRung = rungForVolume(N.goalWeek, (N.paceFast+N.paceSlow)/2); render(); };
   if(ngs) ngs.onchange = function(){ N.goalSession = Math.max(0, +ngs.value||0); render(); };
   if(nld) nld.onchange = function(){ N.longDay = +nld.value; render(); };
   $$('[data-npday]').forEach(function(el){ el.onclick = function(){
@@ -2365,19 +2409,26 @@ function newProgramme(){
     npf.onchange = function(){ N.paceFast = (+npf.value)/4; if(N.paceSlow < N.paceFast) N.paceSlow = N.paceFast; render(); };
     nps.onchange = function(){ N.paceSlow = Math.max((+nps.value)/4, N.paceFast); render(); };
   }
-  const rs = $('#np-red'), is = $('#np-inc');
-  if(rs && is){
+  const nst = $('#np-start'), ngl = $('#np-goal'), nin = $('#np-inc'), nwk = $('#np-weeks2');
+  if(nst && ngl && nin){
+    const pc = (N.paceFast + N.paceSlow)/2;
     const paint = function(){
-      const red = 1 - rs.value/100, inc = +is.value/100;
-      $('#np-red-out').textContent = fmtVol(goalTotal*(1-red), unit);
-      $('#np-red-sub').textContent = Math.round((1-red)*100)+'% of their goal';
-      $('#np-inc-out').textContent = '+'+Math.round(inc*100)+'%';
-      $('#np-warn').innerHTML = incWarn(inc);
-      $('#np-preview').innerHTML = rampPreview(goalTotal, red, inc, N.weeks || 12, unit);
+      const st = +nst.value, gl = +ngl.value, ic = (+nin.value)/4, wks = N.weeks || 12;
+      $('#np-start-out').textContent = rungWeekText(rungAt(st), pc);
+      $('#np-start-sub').textContent = 'Rung '+st+' of '+LADDER_TOP+' \u00b7 '+rungAt(st).days+' days \u00b7 '+rungPhase(rungAt(st));
+      $('#np-goal-out').textContent = rungWeekText(rungAt(gl), pc);
+      $('#np-goal-sub').textContent = 'Rung '+gl+' \u00b7 '+rungAt(gl).days+' days \u00b7 '+rungLongText(rungAt(gl), pc)+' long session';
+      $('#np-inc-out').textContent = ic.toFixed(2).replace(/0$/,'');
+      const need = weeksToClimb(st, gl, ic);
+      $('#np-verdict').innerHTML = ic <= 0 ? 'No climb set, the plan stays where it starts.'
+        : (need <= wks ? 'Reaches the goal at <b>week '+(need+1)+'</b> of '+wks+'.'
+                       : '<b>Falls short in '+wks+' weeks.</b> Needs '+(need+1)+' weeks at this incline.');
     };
-    rs.oninput = paint; is.oninput = paint;
-    rs.onchange = function(){ N.red = 1 - rs.value/100; };
-    is.onchange = function(){ N.inc = +is.value/100; };
+    [nst, ngl, nin].forEach(function(el){ el.oninput = paint; });
+    nst.onchange = function(){ N.startRung = +nst.value; if(N.goalRung < N.startRung) N.goalRung = N.startRung; render(); };
+    ngl.onchange = function(){ N.goalRung = Math.max(+ngl.value, N.startRung); render(); };
+    nin.onchange = function(){ N.incline = (+nin.value)/4; render(); };
+    if(nwk) nwk.onchange = function(){ N.weeks = Math.max(2, Math.min(52, +nwk.value||12)); render(); };
   }
 
   $('#np-back').onclick = function(){
@@ -2402,10 +2453,9 @@ function newProgramme(){
     PATIENTS.push({ id:id, name:N.name, age:0, injury:inj.name,
       goal:N.goal.slice(), goalWeek:N.goalWeek, goalSession:N.goalSession,
       days:N.days.slice(), longDay:N.longDay,
-      startRung: rungForVolume(N.goalWeek*(1-N.red), (N.paceFast+N.paceSlow)/2),
-      goalRung:  rungForVolume(N.goalWeek, (N.paceFast+N.paceSlow)/2),
+      startRung: N.startRung, goalRung: Math.max(N.goalRung, N.startRung),
       paceFast:N.paceFast, paceSlow:N.paceSlow,
-      incline:   1, sessionOverrides:{},
+      incline:   N.incline, sessionOverrides:{},
       red:N.red, inc:N.inc, weeks:N.weeks || 12,
       protocol:proto.id, cur:1, since:'today',
       colour:NEWCOLOURS[PATIENTS.length % NEWCOLOURS.length], logs:{}, levels:{} });
@@ -3150,7 +3200,7 @@ function adAccounts(){
 
     '<div class="card" style="margin-bottom:16px"><div class="card-h"><h3>Patient accounts</h3>'+
       '<span class="hint">the administrator sees adherence and account state — never a clinical note</span></div>'+
-      '<table><thead><tr><th>Patient</th><th>Clinician</th><th>Account</th><th>Programme</th><th>Runs logged</th><th>Adherence</th><th>Consent</th><th></th></tr></thead><tbody>'+
+      '<table><thead><tr><th>Patient</th><th>Clinician</th><th>Account</th><th>Programme</th><th>Sessions logged</th><th>Adherence</th><th>Consent</th><th></th></tr></thead><tbody>'+
       PATIENTS.map(function(p){
         const prog = computeProgram(p, CFG);
         const done = prog.weeks.slice(0,p.cur).reduce(function(a,w){return a+w.logged.length;},0);
