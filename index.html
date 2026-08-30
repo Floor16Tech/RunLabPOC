@@ -688,6 +688,18 @@ function weeksToClimb(from, to, inclinePerWeek){
 }
 
 /* the prescription for one session on a given rung */
+/* the start slider answers "what does day one look like", so it names one
+   session. The week total moves to the line underneath it. */
+function rungStartText(r, pace){
+  if(r.phase === 'run')     return fmtVol(minsToKm(r.othMin || r.lngMin, pace), 'km');
+  if(r.phase === 'walkrun') return r.text;
+  return r.walkMin+' min walking';
+}
+function rungSubText(r, n, pace){
+  return 'Rung '+n+' of '+LADDER_TOP+' \u00b7 '+r.days+' sessions a week \u00b7 '+
+         rungWeekText(r, pace)+' in total';
+}
+
 function rungSession(r, isLong, pace){
   if(r.phase === 'run'){
     const mins = isLong ? r.lngMin : r.othMin;
@@ -975,18 +987,53 @@ function stepCount(it){
 }
 
 /* the rung the patient is on in a given week, given how the weeks went */
+const LADDER_MAX_WEEKS = 104;
+
+/* The length of a programme is not a number anyone types in. It is however long
+   the climb from the start rung to the goal rung takes at this incline, so a
+   setback does not move the goal, it moves the finish line one week further out. */
 function ladderWalk(p, statuses){
   const start = p.startRung || 1, inc = (p.incline === undefined ? 1 : p.incline);
   const top = p.goalRung || LADDER_TOP;
+  const floorW = Math.max(p.cur || 1, 2);
+  const held = inc <= 0 ? Math.max(floorW, p.weeks || 12) : 0;   // a plan set to hold
   const out = []; let pos = start;
-  for(let w = 1; w <= p.weeks; w++){
-    out.push(Math.max(1, Math.min(top, Math.round(pos))));
+  for(let w = 1; w <= LADDER_MAX_WEEKS; w++){
+    const rung = Math.max(1, Math.min(top, Math.round(pos)));
+    out.push(rung);
+    if(held ? w >= held : (rung >= top && w >= floorW)) break;
     const st = statuses[w-1];
-    if(st === 'red' || st === 'flag') pos = Math.max(start > 1 ? 1 : 1, pos - 1);
+    if(st === 'red' || st === 'flag') pos = Math.max(1, pos - 1);
     else if(st === 'green' || st === undefined || st === 'future') pos = Math.min(top, pos + inc);
     /* yellow, active, nodata hold */
   }
   return out;
+}
+
+/* how each week reads from the logs alone, which is all the ladder needs */
+function provisionalStatuses(p, A, n){
+  const out = [];
+  for(let w = 1; w <= n; w++){
+    const pk = w+'-';
+    let anyLog = false, anyBad = false, anyGood = false;
+    Object.keys(p.logs).forEach(function(k){
+      if(k.indexOf(pk) !== 0) return;
+      anyLog = true;
+      const sc = runScore(p.logs[k], A);
+      if(sc < A.yellowAt) anyBad = true; else if(sc >= A.greenAt) anyGood = true;
+    });
+    out.push(!anyLog ? (w < p.cur ? 'nodata' : 'future')
+                     : anyBad ? 'red' : anyGood ? 'green' : 'yellow');
+  }
+  return out;
+}
+function ladderRungs(p){ return ladderWalk(p, provisionalStatuses(p, algoFor(p, CFG), LADDER_MAX_WEEKS)); }
+function ladderLength(p){ return p.startRung ? ladderRungs(p).length : p.weeks; }
+/* what it would take if every week went well: the honest number at the outset */
+function ladderPlannedLength(p){
+  const inc = (p.incline === undefined ? 1 : p.incline);
+  const need = weeksToClimb(p.startRung || 1, p.goalRung || LADDER_TOP, inc);
+  return need === null ? null : Math.max(2, need + 1);
 }
 
 function computeProgram(p, cfg){
@@ -1012,25 +1059,11 @@ function computeProgram(p, cfg){
 
   /* first pass: how the weeks are graded, so the ladder knows where to sit */
   const useLadder = !!p.startRung;
-  let rungs = null;
-  if(useLadder){
-    const provisional = [];
-    for(let w=1; w<=p.weeks; w++){
-      const pk = w+'-';
-      let anyLog = false, anyBad = false, anyGood = false;
-      Object.keys(p.logs).forEach(function(k){
-        if(k.indexOf(pk) !== 0) return;
-        anyLog = true;
-        const sc = runScore(p.logs[k], A);
-        if(sc < A.yellowAt) anyBad = true; else if(sc >= A.greenAt) anyGood = true;
-      });
-      provisional.push(!anyLog ? (w < p.cur ? 'nodata' : 'future')
-                       : anyBad ? 'red' : anyGood ? 'green' : 'yellow');
-    }
-    rungs = ladderWalk(p, provisional);
-  }
+  const rungs  = useLadder ? ladderRungs(p) : null;
+  const nWeeks = useLadder ? rungs.length : p.weeks;
+  const cur    = Math.max(1, Math.min(p.cur, nWeeks));
 
-  for(let w=1; w<=p.weeks; w++){
+  for(let w=1; w<=nWeeks; w++){
     let R = null, ladderDays = null;
     if(useLadder){
       R = rungAt(rungs[w-1]);
@@ -1040,7 +1073,7 @@ function computeProgram(p, cfg){
     if(p.overrides && p.overrides[w]) vol = p.overrides[w].vol;   // clinician override wins
     if(!useLadder && cfg.capAtGoal) vol = Math.min(vol, goalTotal);
     const start = new Date(wk0); start.setDate(start.getDate()+(w-1)*7);
-    const volOn = volStream ? itemActive(volStream, w, p.weeks) : true;
+    const volOn = volStream ? itemActive(volStream, w, nWeeks) : true;
     const days  = [0,1,2,3,4,5,6].map(function(i){
       let amount = 0, rx = null;
       if(useLadder){
@@ -1060,7 +1093,7 @@ function computeProgram(p, cfg){
       }
       const key = w+'-'+i, log = p.logs[key] || null;
       const dt = new Date(start); dt.setDate(dt.getDate()+i); dt.setHours(0,0,0,0);
-      const hasExtra = extras.some(function(it){ return itemActive(it, w, p.weeks) && (it.days||[]).indexOf(i) >= 0; });
+      const hasExtra = extras.some(function(it){ return itemActive(it, w, nWeeks) && (it.days||[]).indexOf(i) >= 0; });
       /* load in minutes, so walking, walk/run and running weeks compare */
       const mins = (rx && rx.kind === 'continuous') ? amount*pace
                  : (useLadder ? amount : amount*pace);
@@ -1143,7 +1176,7 @@ function computeProgram(p, cfg){
     const weekDoses = {}; Object.keys(doses).forEach(function(k){ weekDoses[k] = Object.assign({}, doses[k]); });
     const moves = {};
     extras.forEach(function(it){
-      if(!itemActive(it, w, p.weeks)){ moves[it.key] = 'off'; return; }
+      if(!itemActive(it, w, nWeeks)){ moves[it.key] = 'off'; return; }
       const need = it.every || (it.type === 'ladder' ? (A.dwell || 2) : 1);
       if(status === 'green'){
         greenBy[it.key]++;
@@ -1166,13 +1199,17 @@ function computeProgram(p, cfg){
                pctGoal: useLadder ? rungs[w-1]/(p.goalRung || LADDER_TOP)
                                   : (goalTotal ? vol/goalTotal : 0),
                nextVol: next,
-               nextText: useLadder ? (w < p.weeks ? rungWeekText(rungAt(rungs[w]), pace) : '\u2014')
+               nextText: useLadder ? (w < nWeeks ? rungWeekText(rungAt(rungs[w]), pace) : '\u2014')
                                    : fmtVol(next, unit),
-               nextRung: (useLadder && w < p.weeks) ? rungs[w] : null,
+               nextRung: (useLadder && w < nWeeks) ? rungs[w] : null,
                doses: weekDoses, moves: moves });
     vol = next;
   }
-  return { goalTotal, rel, runDays, weeks:out, current: out[p.cur-1],
+  const planned = useLadder ? ladderPlannedLength(p) : null;
+  return { goalTotal, rel, runDays, weeks:out, current: out[cur-1], cur: cur,
+           /* how long it would have taken with no setbacks, and how many weeks
+              the setbacks have added so far */
+           weeksPlanned: planned, weeksAdded: planned ? Math.max(0, nWeeks - planned) : 0,
            protocol: proto, algo: A, streams: streamsOf(p), extras: extras, unit: unit, pace: pace,
            paceBand: paceBand(p),
            continuousAt: (A.continuousAt || 20) };
@@ -1215,7 +1252,7 @@ function itemsOn(p, prog, wk, dayIdx){
                  detail: rx ? rx.text : fmtVol(d.km, prog.unit) });
   }
   prog.extras.forEach(function(it){
-    if(!itemActive(it, wk.w, p.weeks)) return;
+    if(!itemActive(it, wk.w, prog.weeks.length)) return;
     if((it.days||[]).indexOf(dayIdx) < 0) return;
     const dose = wk.doses[it.key];
     items.push({ key:it.key, type:it.type, name:it.name, detail:doseText(it, dose), dose:dose,
@@ -1347,7 +1384,7 @@ function wToday(p, prog, wk){
         (msg ? '<div class="pcard"><h4>Why this week looks like this</h4><div class="sm">'+msg+'</div></div>' : '')+
 
         (prog.extras.length ? '<div class="pcard"><h4>Where you are up to</h4>'+
-          prog.extras.filter(function(it){ return itemActive(it, wk.w, p.weeks); }).map(function(it){
+          prog.extras.filter(function(it){ return itemActive(it, wk.w, prog.weeks.length); }).map(function(it){
             const dose = wk.doses[it.key];
             const at = it.type==='interval' ? (dose.step||0) : (dose.rung||0);
             const n = stepCount(it);
@@ -1446,7 +1483,7 @@ function wPlan(p, prog, wk){
   return '<div class="wgrid">'+
     '<div class="pcard"><h4>Week '+p.cur+'</h4>'+
       '<div class="sm" style="margin-bottom:12px">'+fmtDate(wk.start)+' – '+fmtDate(wk.days[6].date)+' · '+
-      prog.streams.filter(function(st){ return itemActive(st, wk.w, p.weeks); })
+      prog.streams.filter(function(st){ return itemActive(st, wk.w, prog.weeks.length); })
                   .map(function(st){ return st.name; }).join(' + ')+'</div>'+
       wk.days.map(function(d){
         const its = itemsOn(p, prog, wk, d.i);
@@ -1472,7 +1509,11 @@ function wPlan(p, prog, wk){
         '<div class="kv"><span class="k">Working towards</span><span class="v">'+fmtVol(prog.goalTotal, prog.unit)+' a week</span></div>'+
         (steps ? '<div class="kv"><span class="k">This week</span><span class="v">'+(wk.volText||'')+'</span></div>' : '')+
         '<div class="kv"><span class="k">Training days</span><span class="v">'+prog.runDays.map(function(i){return DAYS[i];}).join(' · ')+'</span></div>'+
-        '<div class="kv"><span class="k">Programme length</span><span class="v">'+p.weeks+' weeks</span></div>'+
+        '<div class="kv"><span class="k">Programme length</span><span class="v">'+prog.weeks.length+' weeks</span></div>'+
+        (prog.weeksAdded > 0
+          ? '<div class="kv"><span class="k">Setbacks so far</span><span class="v">'+prog.weeksAdded+
+            ' week'+(prog.weeksAdded>1?'s':'')+' added</span></div>'
+          : '')+
         '<div class="kv"><span class="k">Presentation</span><span class="v">'+p.injury+'</span></div>'+
         '<div class="kv"><span class="k">Easy pace</span><span class="v">'+prog.paceBand+'</span></div></div>'+
 
@@ -1699,7 +1740,7 @@ function renderClinician(){
             '<div><div style="font-weight:640">'+r.p.name+'</div><div style="font-size:11.5px;color:var(--muted)">since '+r.p.since+'</div></div></div></td>'+
           '<td data-label="Presentation" style="font-size:12.5px;color:var(--ink-2)">'+r.p.injury+'</td>'+
           '<td data-label="Protocol"><span class="pill pill-n">'+r.prog.protocol.name.split(' — ')[0]+'</span></td>'+
-          '<td data-label="Week" class="mono">'+r.p.cur+' / '+r.p.weeks+'</td>'+
+          '<td data-label="Week" class="mono">'+r.prog.cur+' / '+r.prog.weeks.length+'</td>'+
           '<td data-label="Volume" class="mono"><b>'+fmtVol(wk.vol, r.prog.unit)+'</b></td>'+
           '<td data-label="% of goal"><div style="display:flex;align-items:center;gap:7px;min-width:130px"><div style="flex:1;height:6px;background:var(--surface-2);border-radius:99px;overflow:hidden;min-width:52px">'+
             '<div style="height:100%;width:'+pct(wk.pctGoal)+'%;background:'+(wk.atGoal?'var(--blue)':'var(--accent)')+'"></div></div>'+
@@ -1793,7 +1834,7 @@ function weekTable(p, prog){
         '<td class="mono"><b>'+(w.volText || fmtVol(w.vol, prog.unit))+'</b>'+(w.atGoal?' <span class="tag" style="background:var(--blue-soft);color:var(--blue)">goal</span>':'')+
           (ov?' <span class="tag" style="background:var(--amber-soft);color:var(--amber)">manual</span>':'')+'</td>'+
         (prog.extras.length ? '<td style="font-size:11.5px">'+
-            prog.extras.filter(function(it){ return itemActive(it, w.w, p.weeks); }).map(function(it){
+            prog.extras.filter(function(it){ return itemActive(it, w.w, prog.weeks.length); }).map(function(it){
               const mv = w.moves[it.key];
               return doseText(it, w.doses[it.key])+
                 (mv==='advance' ? ' <span style="color:var(--green)">\u2191</span>'
@@ -1843,7 +1884,7 @@ function builderCard(p, prog){
     paceControls(p, 'bd')+
     ladderControls(p, 'bd')+
     '<label class="field" style="margin-top:14px;margin-bottom:0"><span class="lbl">Currently in week</span>'+
-      '<input type="number" min="1" max="'+p.weeks+'" step="1" value="'+p.cur+'" data-set="cur" style="max-width:120px"></label>'+
+      '<input type="number" min="1" max="'+prog.weeks.length+'" step="1" value="'+prog.cur+'" data-set="cur" style="max-width:120px"></label>'+
     '</div></div>';
 }
 
@@ -1920,39 +1961,43 @@ function paceControls(p, pre){
       fmtPace((f+sl)/2)+', so a slower runner gets fewer kilometres for the same minutes.</div>';
 }
 
+/* The length of a programme is not set, it is read: how many weeks the climb
+   takes at this incline. Setbacks push the finish out rather than moving the goal. */
+function ladderVerdict(start, goal, inc, actual){
+  if(inc <= 0) return 'No climb set, so the plan holds where it starts and never reaches the goal.';
+  const planned = ladderPlannedLength({ startRung:start, goalRung:goal, incline:inc });
+  let s = '<b>'+planned+' weeks</b> to climb from rung '+start+' to rung '+goal+', if every week goes well. '+
+          'A sore week does not move the goal, it adds a week.';
+  if(actual != null && actual > planned)
+    s += ' <b>Now '+actual+' weeks</b> after '+(actual-planned)+' setback week'+(actual-planned>1?'s':'')+'.';
+  return s;
+}
+
 function ladderControls(p, pre){
   const start = p.startRung || 1, goal = p.goalRung || LADDER_TOP;
   const pc = paceOf(p);
   const inc = (p.incline === undefined) ? 1 : p.incline;
-  const need = weeksToClimb(start, goal, inc);
-  const verdict = inc <= 0
-    ? 'No climb set, the plan stays where it starts.'
-    : (need === null ? ''
-      : (need <= p.weeks
-          ? 'Reaches the goal at <b>week '+(need+1)+'</b> of '+p.weeks+'.'
-          : '<b>Falls '+Math.max(0, goal - Math.round(start + inc*(p.weeks-1)))+' rungs short</b> in '+p.weeks+' weeks. '+
-            'Needs '+(need+1)+' weeks at this incline.'));
+  const actual = p.logs ? ladderLength(p) : null;
+  const verdict = ladderVerdict(start, goal, inc, actual);
   return '<span class="lbl">Where they start</span>'+
     '<div class="slrow" style="margin-bottom:5px">'+
       '<input type="range" class="slider" id="'+pre+'-start" min="1" max="'+LADDER_TOP+'" step="1" value="'+start+'">'+
-      '<span class="slval" id="'+pre+'-start-out">'+rungWeekText(rungAt(start), pc)+'</span></div>'+
+      '<span class="slval" id="'+pre+'-start-out">'+rungStartText(rungAt(start), pc)+'</span></div>'+
     '<div style="font-size:11.5px;color:var(--muted);margin-bottom:16px" id="'+pre+'-start-sub">'+
-      'Rung '+start+' of '+LADDER_TOP+' \u00b7 '+rungAt(start).days+' days \u00b7 '+rungPhase(rungAt(start))+'</div>'+
+      rungSubText(rungAt(start), start, pc)+'</div>'+
 
     '<span class="lbl">Where they are going</span>'+
     '<div class="slrow" style="margin-bottom:5px">'+
       '<input type="range" class="slider" id="'+pre+'-goal" min="1" max="'+LADDER_TOP+'" step="1" value="'+goal+'">'+
-      '<span class="slval" id="'+pre+'-goal-out">'+rungWeekText(rungAt(goal), pc)+'</span></div>'+
+      '<span class="slval" id="'+pre+'-goal-out">'+rungWeekText(rungAt(goal), pc)+' a week</span></div>'+
     '<div style="font-size:11.5px;color:var(--muted);margin-bottom:16px" id="'+pre+'-goal-sub">'+
-      'Rung '+goal+' \u00b7 '+rungAt(goal).days+' days \u00b7 '+rungLongText(rungAt(goal), pc)+' long session</div>'+
+      'Rung '+goal+' of '+LADDER_TOP+' \u00b7 '+rungAt(goal).days+' sessions a week \u00b7 '+
+      rungLongText(rungAt(goal), pc)+' longest session</div>'+
 
-    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">'+
-      '<label class="field" style="margin:0"><span class="lbl">Over how many weeks</span>'+
-        '<input type="number" id="'+pre+'-weeks2" min="2" max="52" value="'+p.weeks+'"></label>'+
-      '<div><span class="lbl">Rungs climbed per good week</span>'+
-        '<div class="slrow"><input type="range" class="slider" id="'+pre+'-inc" min="0" max="8" step="1" value="'+Math.round(inc*4)+'">'+
-        '<span class="slval" id="'+pre+'-inc-out">'+inc.toFixed(2).replace(/0$/,'')+'</span></div></div>'+
-    '</div>'+
+    '<span class="lbl">Rungs climbed per good week</span>'+
+    '<div class="slrow" style="margin-bottom:14px">'+
+      '<input type="range" class="slider" id="'+pre+'-inc" min="0" max="8" step="1" value="'+Math.round(inc*4)+'">'+
+      '<span class="slval" id="'+pre+'-inc-out">'+inc.toFixed(2).replace(/0$/,'')+'</span></div>'+
     '<div class="note" id="'+pre+'-verdict">'+verdict+'</div>';
 }
 
@@ -2101,26 +2146,22 @@ function bindBuilder(p){
     pf.onchange = function(){ p.paceFast = (+pf.value)/4; if(p.paceSlow < p.paceFast) p.paceSlow = p.paceFast; render(); };
     ps.onchange = function(){ p.paceSlow = Math.max((+ps.value)/4, p.paceFast); render(); };
   }
-  const rst = $('#bd-start'), rgl = $('#bd-goal'), rin = $('#bd-inc'), rwk = $('#bd-weeks2');
+  const rst = $('#bd-start'), rgl = $('#bd-goal'), rin = $('#bd-inc');
   const paintLadder = function(){
-    const st = +rst.value, gl = +rgl.value, ic = (+rin.value)/4, wks = Math.max(2, +rwk.value||12);
-    $('#bd-start-out').textContent = rungWeekText(rungAt(st), paceOf(p));
-    $('#bd-start-sub').textContent = 'Rung '+st+' of '+LADDER_TOP+' \u00b7 '+rungAt(st).days+' days \u00b7 '+rungPhase(rungAt(st));
-    $('#bd-goal-out').textContent = rungWeekText(rungAt(gl), paceOf(p));
-    $('#bd-goal-sub').textContent = 'Rung '+gl+' \u00b7 '+rungAt(gl).days+' days \u00b7 '+rungLongText(rungAt(gl), paceOf(p))+' long session';
+    const st = +rst.value, gl = +rgl.value, ic = (+rin.value)/4;
+    $('#bd-start-out').textContent = rungStartText(rungAt(st), paceOf(p));
+    $('#bd-start-sub').textContent = rungSubText(rungAt(st), st, paceOf(p));
+    $('#bd-goal-out').textContent = rungWeekText(rungAt(gl), paceOf(p))+' a week';
+    $('#bd-goal-sub').textContent = 'Rung '+gl+' of '+LADDER_TOP+' \u00b7 '+rungAt(gl).days+
+          ' sessions a week \u00b7 '+rungLongText(rungAt(gl), paceOf(p))+' longest session';
     $('#bd-inc-out').textContent = ic.toFixed(2).replace(/0$/,'');
-    const need = weeksToClimb(st, gl, ic);
-    $('#bd-verdict').innerHTML = ic <= 0 ? 'No climb set, the plan stays where it starts.'
-      : (need <= wks ? 'Reaches the goal at <b>week '+(need+1)+'</b> of '+wks+'.'
-                     : '<b>Falls '+Math.max(0, gl - Math.round(st + ic*(wks-1)))+' rungs short</b> in '+wks+' weeks. Needs '+(need+1)+' weeks at this incline.');
+    $('#bd-verdict').innerHTML = ladderVerdict(st, gl, ic, null);
   };
-  if(rst && rgl && rin && rwk){
+  if(rst && rgl && rin){
     [rst,rgl,rin].forEach(function(el){ el.oninput = paintLadder; });
-    rwk.oninput = paintLadder;
     rst.onchange = function(){ p.startRung = +rst.value; if(p.goalRung < p.startRung) p.goalRung = p.startRung; render(); };
     rgl.onchange = function(){ p.goalRung = Math.max(+rgl.value, p.startRung); render(); };
     rin.onchange = function(){ p.incline = (+rin.value)/4; render(); };
-    rwk.onchange = function(){ p.weeks = Math.max(2, Math.min(52, +rwk.value||12)); p.cur = Math.min(p.cur, p.weeks); render(); };
   }
   $$('[data-sess]').forEach(function(el){ el.onclick = function(){ sessionModal(p, el.dataset.sess); }; });
 
@@ -2140,8 +2181,7 @@ function bindBuilder(p){
       const k = el.dataset.set, v = +el.value||0;
       if(k==='red') p.red = Math.min(0.9, Math.max(0, v/100));
       if(k==='inc') p.inc = Math.min(0.5, Math.max(0, v/100));
-      if(k==='weeks'){ p.weeks = Math.max(2, Math.min(26, v)); p.cur = Math.min(p.cur, p.weeks); }
-      if(k==='cur')  p.cur   = Math.max(1, Math.min(p.weeks, v));
+      if(k==='cur')  p.cur   = Math.max(1, Math.min(ladderLength(p), v));
       render();
     };
   });
@@ -2306,8 +2346,6 @@ function newProgramme(){
             '<div class="note">'+N.days.length+' sessions a week, splitting as '+
               N.days.map(function(d){ return DAYS[d]+' '+fmtVol(N.goal[d], unit); }).join(', ')+'.</div>'
           : '<div class="note">Pick at least one training day.</div>')+
-        '<label class="field" style="margin-top:14px;margin-bottom:0"><span class="lbl">Programme length (weeks)</span>'+
-          '<input type="number" id="np-weeks" min="2" max="26" value="'+(N.weeks || Math.max(inj.weeks, act.weeks))+'" style="max-width:120px"></label>'+
       '</div></div>'+
       '</div></div>';
   }
@@ -2396,7 +2434,6 @@ function newProgramme(){
     N.days.sort(function(a,b){ return a-b; });
     if(N.days.indexOf(N.longDay) < 0) N.longDay = N.days[N.days.length-1];
     render(); }; });
-  const wk = $('#np-weeks'); if(wk) wk.onchange = function(){ N.weeks = Math.max(2, Math.min(26, +wk.value||12)); render(); };
 
 
   const npf = $('#np-pf'), nps = $('#np-ps');
@@ -2409,26 +2446,23 @@ function newProgramme(){
     npf.onchange = function(){ N.paceFast = (+npf.value)/4; if(N.paceSlow < N.paceFast) N.paceSlow = N.paceFast; render(); };
     nps.onchange = function(){ N.paceSlow = Math.max((+nps.value)/4, N.paceFast); render(); };
   }
-  const nst = $('#np-start'), ngl = $('#np-goal'), nin = $('#np-inc'), nwk = $('#np-weeks2');
+  const nst = $('#np-start'), ngl = $('#np-goal'), nin = $('#np-inc');
   if(nst && ngl && nin){
     const pc = (N.paceFast + N.paceSlow)/2;
     const paint = function(){
-      const st = +nst.value, gl = +ngl.value, ic = (+nin.value)/4, wks = N.weeks || 12;
-      $('#np-start-out').textContent = rungWeekText(rungAt(st), pc);
-      $('#np-start-sub').textContent = 'Rung '+st+' of '+LADDER_TOP+' \u00b7 '+rungAt(st).days+' days \u00b7 '+rungPhase(rungAt(st));
-      $('#np-goal-out').textContent = rungWeekText(rungAt(gl), pc);
-      $('#np-goal-sub').textContent = 'Rung '+gl+' \u00b7 '+rungAt(gl).days+' days \u00b7 '+rungLongText(rungAt(gl), pc)+' long session';
+      const st = +nst.value, gl = +ngl.value, ic = (+nin.value)/4;
+      $('#np-start-out').textContent = rungStartText(rungAt(st), pc);
+      $('#np-start-sub').textContent = rungSubText(rungAt(st), st, pc);
+      $('#np-goal-out').textContent = rungWeekText(rungAt(gl), pc)+' a week';
+      $('#np-goal-sub').textContent = 'Rung '+gl+' of '+LADDER_TOP+' \u00b7 '+rungAt(gl).days+
+          ' sessions a week \u00b7 '+rungLongText(rungAt(gl), pc)+' longest session';
       $('#np-inc-out').textContent = ic.toFixed(2).replace(/0$/,'');
-      const need = weeksToClimb(st, gl, ic);
-      $('#np-verdict').innerHTML = ic <= 0 ? 'No climb set, the plan stays where it starts.'
-        : (need <= wks ? 'Reaches the goal at <b>week '+(need+1)+'</b> of '+wks+'.'
-                       : '<b>Falls short in '+wks+' weeks.</b> Needs '+(need+1)+' weeks at this incline.');
+      $('#np-verdict').innerHTML = ladderVerdict(st, gl, ic, null);
     };
     [nst, ngl, nin].forEach(function(el){ el.oninput = paint; });
     nst.onchange = function(){ N.startRung = +nst.value; if(N.goalRung < N.startRung) N.goalRung = N.startRung; render(); };
     ngl.onchange = function(){ N.goalRung = Math.max(+ngl.value, N.startRung); render(); };
     nin.onchange = function(){ N.incline = (+nin.value)/4; render(); };
-    if(nwk) nwk.onchange = function(){ N.weeks = Math.max(2, Math.min(52, +nwk.value||12)); render(); };
   }
 
   $('#np-back').onclick = function(){
@@ -2456,7 +2490,9 @@ function newProgramme(){
       startRung: N.startRung, goalRung: Math.max(N.goalRung, N.startRung),
       paceFast:N.paceFast, paceSlow:N.paceSlow,
       incline:   N.incline, sessionOverrides:{},
-      red:N.red, inc:N.inc, weeks:N.weeks || 12,
+      red:N.red, inc:N.inc,
+      /* stored only as a fallback: the length is read off the ladder each render */
+      weeks: ladderPlannedLength({ startRung:N.startRung, goalRung:N.goalRung, incline:N.incline }) || 12,
       protocol:proto.id, cur:1, since:'today',
       colour:NEWCOLOURS[PATIENTS.length % NEWCOLOURS.length], logs:{}, levels:{} });
     proto.uses = (proto.uses||0) + 1;
@@ -3209,7 +3245,7 @@ function adAccounts(){
         return '<tr><td><div style="display:flex;align-items:center;gap:10px"><div class="avatar" style="background:'+p.colour+'">'+initials(p.name)+'</div><b>'+p.name+'</b></div></td>'+
           '<td style="font-size:12.5px">M. Krolikowski</td>'+
           '<td>'+(p.cur===1 && !done ? '<span class="pill pill-a">invited</span>' : '<span class="pill pill-g">active</span>')+'</td>'+
-          '<td class="mono" style="font-size:12.5px">wk '+p.cur+' / '+p.weeks+'</td><td class="mono">'+done+'</td>'+
+          '<td class="mono" style="font-size:12.5px">wk '+p.cur+' / '+ladderLength(p)+'</td><td class="mono">'+done+'</td>'+
           '<td><div style="display:flex;align-items:center;gap:7px"><div style="flex:1;height:6px;background:var(--surface-2);border-radius:99px;overflow:hidden;min-width:52px">'+
             '<div style="height:100%;width:'+pct(adh)+'%;background:'+(adh>0.85?'var(--green)':(adh>0.6?'var(--amber)':'var(--red)'))+'"></div></div>'+
             '<span class="mono" style="font-size:12px">'+pct(adh)+'%</span></div></td>'+
@@ -3504,7 +3540,7 @@ function render(){
   /* one app header for every role */
   const p = P(STATE.patient);
   const right = STATE.view==='patient'
-    ? '<span class="pill pill-n">Week '+p.cur+' of '+p.weeks+'</span>'+
+    ? '<span class="pill pill-n">Week '+p.cur+' of '+ladderLength(p)+'</span>'+
       '<div style="display:flex;align-items:center;gap:9px"><div class="avatar" style="background:'+p.colour+'">'+initials(p.name)+'</div>'+
       '<span style="font-weight:640;font-size:13px">'+p.name+'</span></div>'+
       '<button class="btn btn-sm" id="signOut">Sign out</button>'
