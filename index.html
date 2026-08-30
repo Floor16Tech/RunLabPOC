@@ -574,7 +574,8 @@ const GOAL_PRESETS = {
    ends up doing five eight-minute sessions.
    ================================================================== */
 const LONGSHARE = {1:1, 2:0.55, 3:0.40, 4:0.36, 5:0.33, 6:0.32, 7:0.30};
-function rungDays(v){ return v < 24 ? 3 : v < 45 ? 4 : v < 75 ? 5 : 6; }
+/* frequency by weekly running minutes: 24 km, 45 km and 75 km at a 6:30 pace */
+function rungDays(m){ return m < 156 ? 3 : m < 292 ? 4 : m < 487 ? 5 : 6; }
 
 const RUNLADDER = (function(){
   const out = [];
@@ -599,30 +600,43 @@ const RUNLADDER = (function(){
           sub:rm+' min of running in '+tot+' min' });
   });
 
-  /* --- continuous running, climbing about 11% a rung --- */
-  let v = 13.8;   /* picks up exactly where 30 min of running x3 leaves off */
-  while(v <= 92){
-    const d = rungDays(v);
-    const lng = Math.min(34, LONGSHARE[d]*v);
-    const oth = d > 1 ? (v-lng)/(d-1) : 0;
+  /* --- continuous running, in minutes so it holds for any pace --- */
+  let m = 90;     /* picks up exactly where 30 min of running x3 leaves off */
+  while(m <= 600){
+    const d = rungDays(m);
+    const lng = Math.min(220, LONGSHARE[d]*m);   /* cap the long run near 3.5 hours */
     add({ phase:'run', days:d,
-          wk:Math.round(v*10)/10, lng:Math.round(lng*10)/10, oth:Math.round(oth*10)/10,
-          weekMin:Math.round(v*6.5),
-          text:fmtVol(Math.round(oth*10)/10,'km'), longText:fmtVol(Math.round(lng*10)/10,'km') });
-    v *= 1.11;
+          weekMin:Math.round(m), lngMin:Math.round(lng),
+          othMin:Math.round(d > 1 ? (m-lng)/(d-1) : 0) });
+    m *= 1.11;
   }
   return out;
 })();
 const LADDER_TOP = RUNLADDER.length;
 
+/* pace is a band the patient runs inside, in minutes per kilometre */
+function fmtPace(p){
+  const m = Math.floor(p), sec = Math.round((p-m)*60);
+  return m+':'+(sec<10?'0':'')+sec;
+}
+function paceOf(p){
+  const f = p && p.paceFast ? p.paceFast : 6.0;
+  const sl = p && p.paceSlow ? p.paceSlow : 7.0;
+  return (f + sl)/2;
+}
+function paceBand(p){
+  return fmtPace(p.paceFast||6.0)+' to '+fmtPace(p.paceSlow||7.0)+' per km';
+}
+function minsToKm(mins, pace){ return mins/(pace||6.5); }
+
 function rungAt(n){ return RUNLADDER[Math.max(0, Math.min(LADDER_TOP-1, Math.round(n)-1))]; }
 /* every rung expressed in weekly minutes of running, so they compare */
 function rungRunMinutes(r){
-  return r.phase === 'run' ? r.wk*6.5 : r.phase === 'walkrun' ? r.runMin*r.days : 0;
+  return r.phase === 'run' ? r.weekMin : r.phase === 'walkrun' ? r.runMin*r.days : 0;
 }
-function rungForVolume(km){        /* km a week of running -> nearest rung */
+function rungForVolume(km, pace){  /* km a week of running -> nearest rung */
   if(!km || km <= 0) return 1;     /* not running at all: start on the walking rungs */
-  const mins = km*6.5;
+  const mins = km*(pace||6.5);
   let best = 1, bd = Infinity;
   RUNLADDER.forEach(function(r){
     if(rungRunMinutes(r) <= 0) return;
@@ -631,8 +645,8 @@ function rungForVolume(km){        /* km a week of running -> nearest rung */
   });
   return best;
 }
-function rungWeekText(r){
-  if(r.phase === 'run')     return fmtVol(r.wk,'km');
+function rungWeekText(r, pace){
+  if(r.phase === 'run')     return fmtVol(minsToKm(r.weekMin, pace), 'km');
   if(r.phase === 'walkrun') return (r.runMin*r.days)+' min running';
   return r.weekMin+' min walking';
 }
@@ -650,14 +664,19 @@ function pickDays(prefDays, n, longDay){
   return out;
 }
 
-function rungLabel(n){
+function rungLongText(r, pace){
+  if(r.phase === 'run') return fmtVol(minsToKm(r.lngMin, pace), 'km');
+  return r.longText;
+}
+
+function rungLabel(n, pace){
   const r = rungAt(n);
-  return 'Rung '+r.rung+' \u00b7 '+rungWeekText(r)+' over '+r.days+' days';
+  return 'Rung '+r.rung+' \u00b7 '+rungWeekText(r, pace)+' over '+r.days+' days';
 }
 function rungPhase(r){
   return r.phase === 'walk' ? 'walking'
        : r.phase === 'walkrun' ? 'walk/run'
-       : r.wk < 24 ? 'easy running' : r.wk < 50 ? 'building' : 'high volume';
+       : r.weekMin < 156 ? 'easy running' : r.weekMin < 325 ? 'building' : 'high volume';
 }
 function weeksToClimb(from, to, inclinePerWeek){
   if(inclinePerWeek <= 0) return null;
@@ -665,10 +684,11 @@ function weeksToClimb(from, to, inclinePerWeek){
 }
 
 /* the prescription for one session on a given rung */
-function rungSession(r, isLong){
+function rungSession(r, isLong, pace){
   if(r.phase === 'run'){
-    const km = isLong ? r.lng : r.oth;
-    return { kind:'continuous', text:fmtVol(km,'km'), sub:Math.round(km*6.5)+' min at an easy pace', km:km };
+    const mins = isLong ? r.lngMin : r.othMin;
+    const km = Math.round(minsToKm(mins, pace)*10)/10;
+    return { kind:'continuous', text:fmtVol(km,'km'), sub:'about '+mins+' min at an easy pace', km:km, mins:mins };
   }
   if(r.phase === 'walkrun'){
     return { kind:'interval', text:r.text, sub:r.sub, run:r.run, walk:r.walk, reps:r.reps };
@@ -831,10 +851,12 @@ function minSession(weekTotal, days){
 PATIENTS.forEach(function(p){
   if(p.startRung === undefined){
     const wkNow = sum(p.goal) * (1 - p.red);
-    p.startRung = rungForVolume(wkNow);
-    p.goalRung  = rungForVolume(sum(p.goal));
+    p.startRung = rungForVolume(wkNow, 6.5);
+    p.goalRung  = rungForVolume(sum(p.goal), 6.5);
     p.incline   = 1;
     p.sessionOverrides = {};
+    p.paceFast  = 6.0;   /* fastest they should run, min per km */
+    p.paceSlow  = 7.0;   /* slowest, below which it stops being a run */
   }
 });
 
@@ -969,7 +991,7 @@ function computeProgram(p, cfg){
   const extras    = extrasOf(p);
   const volStream = streamsOf(p).filter(function(x){ return x.type === 'volume'; })[0] || null;
   const unit      = (volStream && volStream.unit) || 'km';
-  const pace      = volStream ? (volStream.pace || null) : null;
+  const pace      = paceOf(p);
   const goalTotal = sum(p.goal);
   const rel       = p.goal.map(g => goalTotal ? g/goalTotal : 0);
   const runDays   = p.goal.map((g,i)=> g>0 ? i : -1).filter(i=>i>=0);
@@ -1008,7 +1030,7 @@ function computeProgram(p, cfg){
     let R = null, ladderDays = null;
     if(useLadder){
       R = rungAt(rungs[w-1]);
-      vol = (R.phase === 'run') ? R.wk : R.weekMin;
+      vol = (R.phase === 'run') ? minsToKm(R.weekMin, pace) : R.weekMin;
       ladderDays = pickDays(p.days || [2,4,6], R.days, p.longDay);
     }
     if(p.overrides && p.overrides[w]) vol = p.overrides[w].vol;   // clinician override wins
@@ -1020,8 +1042,8 @@ function computeProgram(p, cfg){
       if(useLadder){
         if(ladderDays.indexOf(i) >= 0 && volOn){
           const isLong = (i === ladderDays[ladderDays.length-1]);
-          rx = rungSession(R, isLong);
-          amount = (R.phase === 'run') ? (isLong ? R.lng : R.oth) : (R.sessMin || R.walkMin);
+          rx = rungSession(R, isLong, pace);
+          amount = (R.phase === 'run') ? rx.km : (R.sessMin || R.walkMin);
         }
       } else {
         amount = volOn ? vol*rel[i] : 0;
@@ -1030,14 +1052,14 @@ function computeProgram(p, cfg){
       if(ov !== undefined && ov !== null){
         amount = ov;
         if(useLadder && R && R.phase === 'run') rx = {kind:'continuous', text:fmtVol(amount,'km'),
-                                                     sub:Math.round(amount*6.5)+' min at an easy pace'};
+                                                     sub:'about '+Math.round(amount*pace)+' min at an easy pace'};
       }
       const key = w+'-'+i, log = p.logs[key] || null;
       const dt = new Date(start); dt.setDate(dt.getDate()+i); dt.setHours(0,0,0,0);
       const hasExtra = extras.some(function(it){ return itemActive(it, w, p.weeks) && (it.days||[]).indexOf(i) >= 0; });
       /* load in minutes, so walking, walk/run and running weeks compare */
-      const mins = (rx && rx.kind === 'continuous') ? amount*6.5
-                 : (useLadder ? amount : amount*6.5);
+      const mins = (rx && rx.kind === 'continuous') ? amount*pace
+                 : (useLadder ? amount : amount*pace);
       const load = mins + (hasExtra ? (A.sessionLoad || 3) : 0);
       return { i, key, km:amount, rx:rx, load, hasExtra, log, date:dt,
                isRun:amount>0, isSession: load>0,
@@ -1129,7 +1151,7 @@ function computeProgram(p, cfg){
     });
 
     out.push({ w, rung: useLadder ? rungs[w-1] : null, phase: R ? R.phase : null,
-               volText: useLadder ? (volOn ? rungWeekText(R) : '\u2014') : fmtVol(volOn?vol:0, unit),
+               volText: useLadder ? (volOn ? rungWeekText(R, pace) : '\u2014') : fmtVol(volOn?vol:0, unit),
                vol: volOn ? vol : 0, volOn, days, prescribed, logged, missed, score, status, mult, why, flags, start,
                overridden, atGoal: Math.abs(vol-goalTotal) < 0.05,
                pctGoal: goalTotal ? vol/goalTotal : 0, nextVol: next,
@@ -1138,6 +1160,7 @@ function computeProgram(p, cfg){
   }
   return { goalTotal, rel, runDays, weeks:out, current: out[p.cur-1],
            protocol: proto, algo: A, streams: streamsOf(p), extras: extras, unit: unit, pace: pace,
+           paceBand: paceBand(p),
            continuousAt: (A.continuousAt || 20) };
 }
 
@@ -1257,8 +1280,10 @@ function wToday(p, prog, wk){
              : lead.name)+'</div>'+
       '<div class="sub">'+
         (run ? (run.rx && run.rx.sub ? run.rx.sub+'. ' : '')+
-               (run.rx && run.rx.kind==='interval'
-                 ? 'Walk the recovery, do not stand still. Stop if pain climbs above 5 out of 10.'
+               (run.rx && run.rx.kind==='continuous'
+                 ? 'Keep it between '+prog.paceBand+'. Stop if pain climbs above 5 out of 10.'
+                 : run.rx && run.rx.kind==='interval'
+                 ? 'Run the efforts easy, between '+prog.paceBand+'. Walk the recovery, do not stand still.'
                  : run.rx && run.rx.kind==='walk'
                  ? 'It should stay pain free the whole way. If it does not, stop and log it.'
                  : 'Easy, conversational pace. Stop if pain climbs above 5 out of 10.')
@@ -1418,7 +1443,8 @@ function wPlan(p, prog, wk){
         '<div class="kv"><span class="k">Weekly volume</span><span class="v">'+fmtVol(prog.goalTotal, prog.unit)+'</span></div>'+
         '<div class="kv"><span class="k">Running days</span><span class="v">'+prog.runDays.map(function(i){return DAYS[i];}).join(' · ')+'</span></div>'+
         '<div class="kv"><span class="k">Programme length</span><span class="v">'+p.weeks+' weeks</span></div>'+
-        '<div class="kv"><span class="k">Presentation</span><span class="v">'+p.injury+'</span></div></div>'+
+        '<div class="kv"><span class="k">Presentation</span><span class="v">'+p.injury+'</span></div>'+
+        '<div class="kv"><span class="k">Easy pace</span><span class="v">'+prog.paceBand+'</span></div></div>'+
 
       '<div class="pcard"><h4>How your plan is built</h4><div class="sm">Every week we look at the pain you reported during and after each run, and whether your symptoms settled. '+
         'If the week went well the distance goes up. If it was borderline we hold it. If it was sore we ease it back. '+
@@ -1778,6 +1804,7 @@ function builderCard(p, prog){
   return '<div class="card" style="margin-bottom:16px"><div class="card-h"><h3>Programme</h3>'+
     '<span class="hint">edit live — everything recalculates</span></div><div class="card-b">'+
     goalFields(p, prog.unit, 'bd')+
+    paceControls(p, 'bd')+
     ladderControls(p, 'bd')+
     '<label class="field" style="margin-top:14px;margin-bottom:0"><span class="lbl">Currently in week</span>'+
       '<input type="number" min="1" max="'+p.weeks+'" step="1" value="'+p.cur+'" data-set="cur" style="max-width:120px"></label>'+
@@ -1841,8 +1868,25 @@ function goalFields(p, unit, pre){
 
 /* start, timeframe, incline. Any two fix the third, so the incline slider
    reports the consequence rather than pretending to be independent. */
+function paceControls(p, pre){
+  const f = p.paceFast || 6.0, sl = p.paceSlow || 7.0;
+  return '<span class="lbl">Their easy pace band</span>'+
+    '<div class="slrow" style="margin-bottom:5px">'+
+      '<span style="font-size:11.5px;color:var(--muted);width:44px">fastest</span>'+
+      '<input type="range" class="slider" id="'+pre+'-pf" min="14" max="48" step="1" value="'+Math.round(f*4)+'">'+
+      '<span class="slval" id="'+pre+'-pf-out">'+fmtPace(f)+'</span></div>'+
+    '<div class="slrow" style="margin-bottom:7px">'+
+      '<span style="font-size:11.5px;color:var(--muted);width:44px">slowest</span>'+
+      '<input type="range" class="slider" id="'+pre+'-ps" min="14" max="48" step="1" value="'+Math.round(sl*4)+'">'+
+      '<span class="slval" id="'+pre+'-ps-out">'+fmtPace(sl)+'</span></div>'+
+    '<div style="font-size:11.5px;color:var(--muted);margin-bottom:16px" id="'+pre+'-pace-sub">'+
+      'Every running session is prescribed inside this band. Distance is converted at '+
+      fmtPace((f+sl)/2)+', so a slower runner gets fewer kilometres for the same minutes.</div>';
+}
+
 function ladderControls(p, pre){
   const start = p.startRung || 1, goal = p.goalRung || LADDER_TOP;
+  const pc = paceOf(p);
   const inc = (p.incline === undefined) ? 1 : p.incline;
   const need = weeksToClimb(start, goal, inc);
   const verdict = inc <= 0
@@ -1855,16 +1899,16 @@ function ladderControls(p, pre){
   return '<span class="lbl">Where they start</span>'+
     '<div class="slrow" style="margin-bottom:5px">'+
       '<input type="range" class="slider" id="'+pre+'-start" min="1" max="'+LADDER_TOP+'" step="1" value="'+start+'">'+
-      '<span class="slval" id="'+pre+'-start-out">'+rungWeekText(rungAt(start))+'</span></div>'+
+      '<span class="slval" id="'+pre+'-start-out">'+rungWeekText(rungAt(start), pc)+'</span></div>'+
     '<div style="font-size:11.5px;color:var(--muted);margin-bottom:16px" id="'+pre+'-start-sub">'+
       'Rung '+start+' of '+LADDER_TOP+' \u00b7 '+rungAt(start).days+' days \u00b7 '+rungPhase(rungAt(start))+'</div>'+
 
     '<span class="lbl">Where they are going</span>'+
     '<div class="slrow" style="margin-bottom:5px">'+
       '<input type="range" class="slider" id="'+pre+'-goal" min="1" max="'+LADDER_TOP+'" step="1" value="'+goal+'">'+
-      '<span class="slval" id="'+pre+'-goal-out">'+rungWeekText(rungAt(goal))+'</span></div>'+
+      '<span class="slval" id="'+pre+'-goal-out">'+rungWeekText(rungAt(goal), pc)+'</span></div>'+
     '<div style="font-size:11.5px;color:var(--muted);margin-bottom:16px" id="'+pre+'-goal-sub">'+
-      'Rung '+goal+' \u00b7 '+rungAt(goal).days+' days \u00b7 '+rungAt(goal).longText+'</div>'+
+      'Rung '+goal+' \u00b7 '+rungAt(goal).days+' days \u00b7 '+rungLongText(rungAt(goal), pc)+' long session</div>'+
 
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">'+
       '<label class="field" style="margin:0"><span class="lbl">Over how many weeks</span>'+
@@ -1994,13 +2038,28 @@ function bindBuilder(p){
     is.oninput  = function(){ repaint(1 - rs.value/100, +is.value/100); };
     is.onchange = function(){ p.inc = +is.value/100; render(); };
   }
+  const pf = $('#bd-pf'), ps = $('#bd-ps');
+  if(pf && ps){
+    const paintPace = function(){
+      const a = (+pf.value)/4, b = (+ps.value)/4;
+      $('#bd-pf-out').textContent = fmtPace(a);
+      $('#bd-ps-out').textContent = fmtPace(b);
+      $('#bd-pace-sub').textContent = b < a
+        ? 'The slowest end must not be faster than the fastest end.'
+        : 'Every running session is prescribed inside this band. Distance is converted at '+
+          fmtPace((a+b)/2)+', so a slower runner gets fewer kilometres for the same minutes.';
+    };
+    pf.oninput = paintPace; ps.oninput = paintPace;
+    pf.onchange = function(){ p.paceFast = (+pf.value)/4; if(p.paceSlow < p.paceFast) p.paceSlow = p.paceFast; render(); };
+    ps.onchange = function(){ p.paceSlow = Math.max((+ps.value)/4, p.paceFast); render(); };
+  }
   const rst = $('#bd-start'), rgl = $('#bd-goal'), rin = $('#bd-inc'), rwk = $('#bd-weeks');
   const paintLadder = function(){
     const st = +rst.value, gl = +rgl.value, ic = (+rin.value)/4, wks = Math.max(2, +rwk.value||12);
-    $('#bd-start-out').textContent = rungWeekText(rungAt(st));
+    $('#bd-start-out').textContent = rungWeekText(rungAt(st), paceOf(p));
     $('#bd-start-sub').textContent = 'Rung '+st+' of '+LADDER_TOP+' \u00b7 '+rungAt(st).days+' days \u00b7 '+rungPhase(rungAt(st));
-    $('#bd-goal-out').textContent = rungWeekText(rungAt(gl));
-    $('#bd-goal-sub').textContent = 'Rung '+gl+' \u00b7 '+rungAt(gl).days+' days \u00b7 '+rungAt(gl).longText;
+    $('#bd-goal-out').textContent = rungWeekText(rungAt(gl), paceOf(p));
+    $('#bd-goal-sub').textContent = 'Rung '+gl+' \u00b7 '+rungAt(gl).days+' days \u00b7 '+rungLongText(rungAt(gl), paceOf(p))+' long session';
     $('#bd-inc-out').textContent = ic.toFixed(2).replace(/0$/,'');
     const need = weeksToClimb(st, gl, ic);
     $('#bd-verdict').innerHTML = ic <= 0 ? 'No climb set, the plan stays where it starts.'
@@ -2123,6 +2182,7 @@ const NEWCOLOURS = ['#0a0a0a','#3f3f46','#E31B23','#52525b','#71717a','#27272a']
 function newProgramme(){
   const N = STATE.newProg = STATE.newProg || {step:1, name:'', injury:null, activity:null, unit:null,
                                               goalWeek:0, goalSession:0, days:[], longDay:6,
+                                              paceFast:6.0, paceSlow:7.0,
                                               goal:[0,0,0,0,0,0,0], red:null, inc:null, weeks:null};
   const nsync = function(){ N.goal = distributeGoal(N.goalWeek, N.goalSession, N.days, N.longDay); };
   nsync();
@@ -2229,6 +2289,7 @@ function newProgramme(){
 
       '<div class="sect"><div class="sect-h"><span class="sect-n">6</span><div style="flex:1"><h3>Their ramp</h3>'+
         '<div class="sh">The only two numbers you set. RAMP handles the rest.</div></div></div><div class="sect-b">'+
+        paceControls(N, 'np')+
         (goalTotal > 0
           ? rampSliders(N.red, N.inc, goalTotal, unit, 'np')+
             '<div id="np-preview" style="margin-top:16px">'+rampPreview(goalTotal, N.red, N.inc, N.weeks || 12, unit)+'</div>'+
@@ -2294,6 +2355,16 @@ function newProgramme(){
   const wk = $('#np-weeks'); if(wk) wk.onchange = function(){ N.weeks = Math.max(2, Math.min(26, +wk.value||12)); render(); };
 
 
+  const npf = $('#np-pf'), nps = $('#np-ps');
+  if(npf && nps){
+    const pp = function(){
+      $('#np-pf-out').textContent = fmtPace((+npf.value)/4);
+      $('#np-ps-out').textContent = fmtPace((+nps.value)/4);
+    };
+    npf.oninput = pp; nps.oninput = pp;
+    npf.onchange = function(){ N.paceFast = (+npf.value)/4; if(N.paceSlow < N.paceFast) N.paceSlow = N.paceFast; render(); };
+    nps.onchange = function(){ N.paceSlow = Math.max((+nps.value)/4, N.paceFast); render(); };
+  }
   const rs = $('#np-red'), is = $('#np-inc');
   if(rs && is){
     const paint = function(){
@@ -2331,8 +2402,9 @@ function newProgramme(){
     PATIENTS.push({ id:id, name:N.name, age:0, injury:inj.name,
       goal:N.goal.slice(), goalWeek:N.goalWeek, goalSession:N.goalSession,
       days:N.days.slice(), longDay:N.longDay,
-      startRung: rungForVolume(N.goalWeek*(1-N.red)),
-      goalRung:  rungForVolume(N.goalWeek),
+      startRung: rungForVolume(N.goalWeek*(1-N.red), (N.paceFast+N.paceSlow)/2),
+      goalRung:  rungForVolume(N.goalWeek, (N.paceFast+N.paceSlow)/2),
+      paceFast:N.paceFast, paceSlow:N.paceSlow,
       incline:   1, sessionOverrides:{},
       red:N.red, inc:N.inc, weeks:N.weeks || 12,
       protocol:proto.id, cur:1, since:'today',
