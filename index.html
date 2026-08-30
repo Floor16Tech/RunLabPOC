@@ -774,6 +774,13 @@ const PROTOCOLS = [
           greenAt:0.91, yellowAt:0.90, deload:0.10, dwell:2, flagPainDuring:7, flagPainAfter:5 },
    streams:[ {key:'run', type:'volume', name:'Running', unit:'km', pace:6.5} ]},
 
+  {id:'pht', name:'Proximal hamstring tendinopathy', region:'Ischial / posterior thigh',
+   red:0.35, inc:0.10, weeks:16, uses:5,
+   note:'Compression in hip flexion is the aggravator, so uphill and speed work come last. Slow to settle, and graded on the next morning.',
+   algo:{ wDuring:0.30, wAfter:0.50, wBaseline:0.20, painStep:0.025,
+          greenAt:0.91, yellowAt:0.90, deload:0.10, dwell:3, flagPainDuring:6, flagPainAfter:4 },
+   streams:[ {key:'run', type:'volume', name:'Running', unit:'km', pace:6.5} ]},
+
   {id:'acl', name:'Post-ACLR return to sport', region:'Knee',
    red:0.35, inc:0.15, weeks:10, uses:9,
    note:'Hop-test clearance before week 1. Court exposure climbs only on clean weeks.',
@@ -793,51 +800,96 @@ const PROTOCOLS = [
 ];
 
 /* ---------- the caseload ---------- */
+/* Six demonstration programmes, chosen to span the range rather than to look
+   tidy. Between them they cover the very bottom of the ladder, both sides of
+   the walk/run handoff, continuous running, a climb with no setbacks, a climb
+   that has stalled, a live safety stop, and a half-rung incline. They also put
+   the two deload sizes side by side: Sarah's tendinopathy eases back one rung
+   on a sore week, Priya's bone stress reaction eases back two.
+
+   The goal each week is not typed in beside the goal rung, it is derived from
+   it, so the number the patient reads and the top of their ladder cannot drift
+   apart. Every patient, programme and message here is fabricated. */
 const PATIENTS = [
+
+  /* continuous running, mid climb, one sore week already absorbed */
   { id:'p1', name:'Sarah Nguyen', age:34, injury:'Mid-portion Achilles tendinopathy',
-    goal:[0,0,8,0,8,0,14], red:0.30, inc:0.15, weeks:10, protocol:'tendo', cur:5,
-    since:'22 Jun 2026', colour:'#0a0a0a',
+    red:0.30, inc:0.15, protocol:'tendo', cur:7, since:'8 Jun 2026', colour:'#0a0a0a',
+    days:[2,4,6], longDay:6, startRung:16, goalRung:24, incline:1,
+    paceFast:5.25, paceSlow:6.25, sessionOverrides:{},
     logs:{ '1-2':{pd:2,pa:1,b:'yes'}, '1-4':{pd:1,pa:1,b:'yes'}, '1-6':{pd:2,pa:0,b:'yes'},
-           '2-2':{pd:3,pa:2,b:'yes'}, '2-4':{pd:2,pa:2,b:'yes'}, '2-6':{pd:3,pa:1,b:'yes'},
+           '2-2':{pd:2,pa:2,b:'yes'}, '2-4':{pd:1,pa:1,b:'yes'}, '2-6':{pd:2,pa:1,b:'yes'},
            '3-2':{pd:5,pa:4,b:'no'},  '3-4':{pd:4,pa:4,b:'yes'}, '3-6':{pd:5,pa:3,b:'no'},
-           '4-2':{pd:2,pa:1,b:'yes'}, '4-4':{pd:2,pa:2,b:'yes'}, '4-6':{pd:1,pa:1,b:'yes'},
-           '5-2':{pd:2,pa:1,b:'yes'} } },
+           '4-2':{pd:3,pa:2,b:'yes'}, '4-4':{pd:3,pa:3,b:'yes'}, '4-6':{pd:2,pa:2,b:'yes'},
+           /* the one week in the demo that lands in the hold band. It takes pain
+              of 5, 5 and 6 out of 10 to get there, which is worth noticing */
+           '5-2':{pd:5,pa:4,b:'yes'}, '5-4':{pd:5,pa:4,b:'yes'}, '5-6':{pd:6,pa:4,b:'yes'},
+           '6-2':{pd:1,pa:1,b:'yes'}, '6-4':{pd:2,pa:0,b:'yes'}, '6-6':{pd:1,pa:1,b:'yes'},
+           '7-2':{pd:2,pa:1,b:'yes'} } },
 
-  { id:'p2', name:'Dave Whitfield', age:41, injury:'Patellofemoral pain — right',
-    goal:[0,5,0,5,0,0,7], red:0.40, inc:0.10, weeks:8, protocol:'std', cur:3,
-    since:'3 Aug 2026', colour:'#3f3f46',
-    logs:{ '1-1':{pd:3,pa:3,b:'yes'}, '1-3':{pd:4,pa:4,b:'yes'}, '1-6':{pd:4,pa:5,b:'no'},
-           '2-1':{pd:5,pa:5,b:'no'},  '2-3':{pd:6,pa:4,b:'no'},  '2-6':{pd:5,pa:4,b:'yes'},
-           '3-1':{pd:4,pa:3,b:'yes'} } },
+  /* stalled on walk/run: three sore weeks have pushed the finish six weeks out,
+     and this week's first session crossed the flag threshold */
+  { id:'p2', name:'Dave Whitfield', age:41, injury:'Patellofemoral pain \u2014 right',
+    red:0.40, inc:0.10, protocol:'std', cur:9, since:'22 Jun 2026', colour:'#3f3f46',
+    days:[1,3,5], longDay:5, startRung:9, goalRung:21, incline:1,
+    paceFast:6.0, paceSlow:7.25, sessionOverrides:{},
+    logs:{ '1-1':{pd:2,pa:2,b:'yes'}, '1-3':{pd:2,pa:1,b:'yes'}, '1-5':{pd:3,pa:2,b:'yes'},
+           '2-1':{pd:2,pa:1,b:'yes'}, '2-3':{pd:3,pa:2,b:'yes'}, '2-5':{pd:2,pa:2,b:'yes'},
+           '3-1':{pd:5,pa:5,b:'no'},  '3-3':{pd:6,pa:4,b:'no'},  '3-5':{pd:5,pa:4,b:'yes'},
+           '4-1':{pd:3,pa:2,b:'yes'}, '4-3':{pd:3,pa:3,b:'yes'}, '4-5':{pd:2,pa:2,b:'yes'},
+           '5-1':{pd:2,pa:2,b:'yes'}, '5-3':{pd:2,pa:1,b:'yes'}, '5-5':{pd:3,pa:2,b:'yes'},
+           '6-1':{pd:6,pa:5,b:'no'},  '6-3':{pd:5,pa:5,b:'no'},  '6-5':{pd:6,pa:4,b:'no'},
+           '7-1':{pd:3,pa:3,b:'yes'}, '7-3':{pd:4,pa:3,b:'yes'}, '7-5':{pd:3,pa:2,b:'yes'},
+           '8-1':{pd:5,pa:5,b:'no'},  '8-3':{pd:5,pa:4,b:'no'},  '8-5':{pd:4,pa:4,b:'no'},
+           '9-1':{pd:8,pa:5,b:'no'} } },
 
+  /* running rungs on the strictest protocol on the board: bone stress eases
+     back 15%, which up here is two rungs where a tendinopathy would be one */
   { id:'p3', name:'Priya Raman', age:27, injury:'Tibial bone stress reaction (grade 1)',
-    goal:[0,0,4,0,4,0,6], red:0.50, inc:0.10, weeks:16, protocol:'bone', cur:2,
-    since:'10 Aug 2026', colour:'#E31B23',
+    red:0.50, inc:0.10, protocol:'bone', cur:6, since:'13 Jul 2026', colour:'#E31B23',
+    days:[2,4,6], longDay:6, startRung:17, goalRung:25, incline:1,
+    paceFast:5.5, paceSlow:6.5, sessionOverrides:{},
     logs:{ '1-2':{pd:1,pa:2,b:'yes'}, '1-4':{pd:2,pa:2,b:'yes'}, '1-6':{pd:2,pa:1,b:'yes'},
-           '2-2':{pd:7,pa:6,b:'no'} } },
+           '2-2':{pd:1,pa:1,b:'yes'}, '2-4':{pd:2,pa:1,b:'yes'}, '2-6':{pd:1,pa:2,b:'yes'},
+           '3-2':{pd:2,pa:1,b:'yes'}, '3-4':{pd:1,pa:1,b:'yes'}, '3-6':{pd:2,pa:2,b:'yes'},
+           '4-2':{pd:5,pa:5,b:'no'},  '4-4':{pd:4,pa:4,b:'no'},  '4-6':{pd:5,pa:4,b:'no'},
+           '5-2':{pd:2,pa:1,b:'yes'}, '5-4':{pd:1,pa:2,b:'yes'}, '5-6':{pd:2,pa:1,b:'yes'},
+           '6-2':{pd:1,pa:1,b:'yes'} } },
 
+  /* the clean case: every week green, no setbacks, and close enough to the top
+     to show what a programme looks like as it finishes */
   { id:'p4', name:'Marc Boucher', age:29, injury:'Post-ACLR (14 months) return to run',
-    goal:[0,4,0,4,0,4,6], red:0.35, inc:0.15, weeks:8, protocol:'acl', cur:7,
-    since:'6 Jul 2026', colour:'#52525b',
+    red:0.35, inc:0.15, protocol:'acl', cur:9, since:'15 Jun 2026', colour:'#52525b',
+    days:[1,3,5,6], longDay:6, startRung:11, goalRung:21, incline:1,
+    paceFast:5.75, paceSlow:6.75, sessionOverrides:{},
     logs:{ '1-1':{pd:1,pa:0,b:'yes'}, '1-3':{pd:0,pa:1,b:'yes'}, '1-5':{pd:1,pa:0,b:'yes'}, '1-6':{pd:1,pa:1,b:'yes'},
            '2-1':{pd:0,pa:0,b:'yes'}, '2-3':{pd:1,pa:1,b:'yes'}, '2-5':{pd:0,pa:0,b:'yes'}, '2-6':{pd:1,pa:0,b:'yes'},
-           '3-1':{pd:1,pa:1,b:'yes'}, '3-3':{pd:0,pa:0,b:'yes'}, '3-5':{pd:1,pa:0,b:'yes'}, '3-6':{pd:2,pa:1,b:'yes'},
+           '3-1':{pd:1,pa:1,b:'yes'}, '3-3':{pd:0,pa:0,b:'yes'}, '3-5':{pd:1,pa:0,b:'yes'}, '3-6':{pd:1,pa:1,b:'yes'},
            '4-1':{pd:1,pa:0,b:'yes'}, '4-3':{pd:1,pa:1,b:'yes'}, '4-5':{pd:0,pa:1,b:'yes'}, '4-6':{pd:1,pa:1,b:'yes'},
            '5-1':{pd:0,pa:0,b:'yes'}, '5-3':{pd:1,pa:0,b:'yes'}, '5-5':{pd:0,pa:0,b:'yes'}, '5-6':{pd:1,pa:1,b:'yes'},
            '6-1':{pd:0,pa:1,b:'yes'}, '6-3':{pd:0,pa:0,b:'yes'}, '6-5':{pd:1,pa:0,b:'yes'}, '6-6':{pd:0,pa:0,b:'yes'},
-           '7-1':{pd:0,pa:0,b:'yes'}, '7-3':{pd:1,pa:0,b:'yes'} } },
+           '7-1':{pd:1,pa:0,b:'yes'}, '7-3':{pd:0,pa:1,b:'yes'}, '7-5':{pd:0,pa:0,b:'yes'}, '7-6':{pd:1,pa:0,b:'yes'},
+           '8-1':{pd:0,pa:0,b:'yes'}, '8-3':{pd:1,pa:1,b:'yes'}, '8-5':{pd:0,pa:0,b:'yes'}, '8-6':{pd:0,pa:1,b:'yes'},
+           '9-1':{pd:0,pa:0,b:'yes'}, '9-3':{pd:1,pa:0,b:'yes'} } },
 
-  { id:'p5', name:'Kelly Osei', age:38, injury:'Plantar fasciopathy — left',
-    goal:[0,0,5,0,5,0,8], red:0.80, inc:0.10, weeks:14, protocol:'std', cur:1,
-    since:'17 Aug 2026', colour:'#71717a', logs:{} },
+  /* the very bottom: fifteen minutes of pain free walking, day one, nothing
+     logged yet, and the whole climb to easy running still ahead */
+  { id:'p5', name:'Kelly Osei', age:38, injury:'Plantar fasciopathy \u2014 left',
+    red:0.80, inc:0.10, protocol:'std', cur:1, since:'17 Aug 2026', colour:'#71717a',
+    days:[2,4,6], longDay:6, startRung:1, goalRung:20, incline:1,
+    paceFast:7.0, paceSlow:8.25, sessionOverrides:{}, logs:{} },
 
+  /* the cautious dial: half a rung per good week, so the same climb takes twice
+     as long. Still on the walking rungs, and deliberately so */
   { id:'p6', name:'Tom Ferreira', age:52, injury:'Proximal hamstring tendinopathy',
-    goal:[0,6,0,0,6,0,10], red:0.30, inc:0.15, weeks:10, protocol:'tendo', cur:4,
-    since:'27 Jul 2026', colour:'#27272a',
-    logs:{ '1-1':{pd:2,pa:2,b:'yes'}, '1-4':{pd:2,pa:1,b:'yes'}, '1-6':{pd:3,pa:2,b:'yes'},
-           '2-1':{pd:2,pa:2,b:'yes'}, '2-4':{pd:3,pa:2,b:'yes'}, '2-6':{pd:3,pa:3,b:'yes'},
-           '3-1':{pd:3,pa:2,b:'yes'}, '3-6':{pd:4,pa:3,b:'yes'},
-           '4-1':{pd:3,pa:3,b:'yes'} } }
+    red:0.30, inc:0.15, protocol:'pht', cur:5, since:'27 Jul 2026', colour:'#27272a',
+    days:[2,5,6], longDay:6, startRung:3, goalRung:15, incline:0.5,
+    paceFast:6.75, paceSlow:8.0, sessionOverrides:{},
+    logs:{ '1-2':{pd:2,pa:2,b:'yes'}, '1-5':{pd:2,pa:1,b:'yes'}, '1-6':{pd:3,pa:2,b:'yes'},
+           '2-2':{pd:2,pa:2,b:'yes'}, '2-5':{pd:3,pa:2,b:'yes'}, '2-6':{pd:2,pa:2,b:'yes'},
+           '3-2':{pd:3,pa:3,b:'yes'},
+           '4-2':{pd:2,pa:2,b:'yes'}, '4-5':{pd:2,pa:1,b:'yes'}, '4-6':{pd:3,pa:2,b:'yes'},
+           '5-2':{pd:2,pa:1,b:'yes'} } }
 ];
 
 /* A physiotherapist decides three things about the goal: how much in a week,
@@ -864,6 +916,19 @@ function minSession(weekTotal, days){
 
 /* put every existing programme onto the ladder: the rung nearest what they
    are doing now, climbing toward the rung nearest their goal */
+/* The goal a patient reads and the top of their ladder are the same thing, so
+   the weekly split is derived from the goal rung rather than typed in beside it.
+   Anything else lets the two drift apart. */
+PATIENTS.forEach(function(p){
+  if(p.goal) return;
+  const g = rungAt(p.goalRung), pc = paceOf(p);
+  const wk = g.phase === 'run' ? minsToKm(g.weekMin, pc) : minsToKm(rungRunMinutes(g), pc);
+  const lng = g.phase === 'run' ? minsToKm(g.lngMin, pc) : wk/g.days;
+  p.goalWeek    = Math.round(wk*10)/10;
+  p.goalSession = Math.round(lng*10)/10;
+  p.goal = distributeGoal(p.goalWeek, p.goalSession, p.days, p.longDay);
+});
+
 PATIENTS.forEach(function(p){
   if(p.startRung === undefined){
     const wkNow = sum(p.goal) * (1 - p.red);
@@ -874,14 +939,6 @@ PATIENTS.forEach(function(p){
     p.paceFast  = 6.0;   /* fastest they should run, min per km */
     p.paceSlow  = 7.0;   /* slowest, below which it stops being a run */
   }
-});
-
-/* the demo should show a patient in each phase of the ladder */
-[['p5', 1, 20, 20], ['p3', 8, 18, 16]].forEach(function(x){
-  const q = PATIENTS.filter(function(y){ return y.id === x[0]; })[0];
-  if(!q) return;
-  q.startRung = x[1]; q.goalRung = x[2]; q.weeks = x[3];
-  q.cur = Math.min(q.cur, x[3]);
 });
 
 /* existing programmes carry a per-day array; read the three numbers back out of it */
@@ -989,10 +1046,47 @@ function stepCount(it){
 /* the rung the patient is on in a given week, given how the weeks went */
 const LADDER_MAX_WEEKS = 104;
 
+/* What a rung costs the tissue, in minutes a week. Walking rungs are measured in
+   walking minutes and everything above them in running minutes, so the two are
+   only ever compared inside their own phase. */
+function rungLoad(r){ return r.phase === 'walk' ? r.weekMin : rungRunMinutes(r); }
+
+/* A sore week eases the load by the protocol's deload percentage. The ladder is
+   the only currency a plan has, so that percentage is turned into whole rungs:
+   step down to the rung whose week lands closest to the reduced load, never less
+   than one rung, and never past a change of phase, which is already a big step.
+   This is why a bone stress reaction at 15% drops two rungs where a tendinopathy
+   at 10% drops one. */
+function rungsToDrop(n, deload){
+  if(n <= 1) return 0;
+  const cur = rungAt(n);
+  const target = rungLoad(cur) * (1 - (deload || 0.1));
+  let best = n - 1, bestGap = Infinity;
+  for(let k = n - 1; k >= 1; k--){
+    const r = rungAt(k);
+    if(r.phase !== cur.phase) break;
+    const gap = Math.abs(rungLoad(r) - target);
+    if(gap > bestGap) break;
+    bestGap = gap; best = k;
+  }
+  return Math.max(1, n - best);
+}
+
+/* what actually happened, said in the patient's terms */
+function deloadText(from, to){
+  if(to == null) return 'ease back a step';
+  if(to >= from) return 'already on the lowest rung, so this week holds';
+  const d = from - to;
+  const a = rungAt(from), b = rungAt(to);
+  const cut = a.phase === b.phase ? 1 - rungLoad(b)/rungLoad(a) : null;
+  return 'ease back '+d+' rung'+(d > 1 ? 's' : '')+
+         (cut && cut > 0.005 ? ', about '+pct(cut)+'% less' : '');
+}
+
 /* The length of a programme is not a number anyone types in. It is however long
    the climb from the start rung to the goal rung takes at this incline, so a
    setback does not move the goal, it moves the finish line one week further out. */
-function ladderWalk(p, statuses){
+function ladderWalk(p, statuses, deload){
   const start = p.startRung || 1, inc = (p.incline === undefined ? 1 : p.incline);
   const top = p.goalRung || LADDER_TOP;
   const floorW = Math.max(p.cur || 1, 2);
@@ -1003,37 +1097,71 @@ function ladderWalk(p, statuses){
     out.push(rung);
     if(held ? w >= held : (rung >= top && w >= floorW)) break;
     const st = statuses[w-1];
-    if(st === 'red' || st === 'flag') pos = Math.max(1, pos - 1);
+    if(st === 'red' || st === 'flag') pos = Math.max(1, rung - rungsToDrop(rung, deload));
     else if(st === 'green' || st === undefined || st === 'future') pos = Math.min(top, pos + inc);
     /* yellow, active, nodata hold */
   }
   return out;
 }
 
-/* how each week reads from the logs alone, which is all the ladder needs */
-function provisionalStatuses(p, A, n){
+/* what one session on a rung costs, in minutes. This is the weight a session
+   carries in its week's score, so the long run counts for more than the others. */
+function rungSessionMinutes(r, isLong){
+  if(r.phase === 'run') return isLong ? r.lngMin : r.othMin;
+  return r.sessMin || r.walkMin || 0;
+}
+
+/* Grade every week the way the week table grades it: the volume-weighted mean
+   of the session scores. Takes the candidate rungs because the weights depend
+   on them. */
+function weekStatuses(p, A, rungs, n){
   const out = [];
   for(let w = 1; w <= n; w++){
-    const pk = w+'-';
-    let anyLog = false, anyBad = false, anyGood = false;
-    Object.keys(p.logs).forEach(function(k){
-      if(k.indexOf(pk) !== 0) return;
-      anyLog = true;
-      const sc = runScore(p.logs[k], A);
-      if(sc < A.yellowAt) anyBad = true; else if(sc >= A.greenAt) anyGood = true;
+    const R = rungAt(rungs[w-1] || 1);
+    const dayList = pickDays(p.days || [2,4,6], R.days, p.longDay);
+    const ld = dayList[dayList.length-1];
+    let wsum = 0, tot = 0, logged = 0, flagged = false;
+    dayList.forEach(function(i){
+      const log = p.logs[w+'-'+i];
+      if(!log) return;
+      logged++;
+      if(log.pd >= A.flagPainDuring || log.pa >= A.flagPainAfter) flagged = true;
+      const load = rungSessionMinutes(R, i === ld) + (A.sessionLoad || 0);
+      wsum += load; tot += load * runScore(log, A);
     });
-    out.push(!anyLog ? (w < p.cur ? 'nodata' : 'future')
-                     : anyBad ? 'red' : anyGood ? 'green' : 'yellow');
+    if(!logged){ out.push(w < p.cur ? 'nodata' : 'future'); continue; }
+    if(CFG.safetyStop && flagged){ out.push('flag'); continue; }
+    if(logged < Math.min(CFG.minRunsToScore, dayList.length)){ out.push('nodata'); continue; }
+    const sc = wsum ? tot/wsum : null;
+    out.push(sc >= A.greenAt ? 'green' : sc >= A.yellowAt ? 'yellow' : 'red');
   }
   return out;
 }
-function ladderRungs(p){ return ladderWalk(p, provisionalStatuses(p, algoFor(p, CFG), LADDER_MAX_WEEKS)); }
+
+function sameRungs(a, b){
+  if(a.length !== b.length) return false;
+  for(let i = 0; i < a.length; i++) if(a[i] !== b[i]) return false;
+  return true;
+}
+
+function ladderRungs(p){
+  const A = algoFor(p, CFG);
+  /* seed with an all-green walk, then re-grade and re-walk until it settles */
+  let rungs = ladderWalk(p, [], A.deload);
+  for(let pass = 0; pass < 4; pass++){
+    const next = ladderWalk(p, weekStatuses(p, A, rungs, rungs.length + 8), A.deload);
+    if(sameRungs(next, rungs)) break;
+    rungs = next;
+  }
+  return rungs;
+}
 function ladderLength(p){ return p.startRung ? ladderRungs(p).length : p.weeks; }
 /* what it would take if every week went well: the honest number at the outset */
 function ladderPlannedLength(p){
   const inc = (p.incline === undefined ? 1 : p.incline);
-  const need = weeksToClimb(p.startRung || 1, p.goalRung || LADDER_TOP, inc);
-  return need === null ? null : Math.max(2, need + 1);
+  if(inc <= 0) return null;
+  /* walked rather than calculated, so it always agrees with the plan on screen */
+  return ladderWalk({ startRung:p.startRung, goalRung:p.goalRung, incline:inc, cur:1 }, [], 0).length;
 }
 
 function computeProgram(p, cfg){
@@ -1153,18 +1281,27 @@ function computeProgram(p, cfg){
 
     /* decision */
     let status = 'pending', mult = 1, why = '';
+    const nextRungOf = (useLadder && w < nWeeks) ? rungs[w] : null;
     const graded = (!future) && (w < p.cur) && (logged.length >= Math.min(cfg.minRunsToScore, prescribed.length));
     if(future){ status='future'; why='Projected — assumes the week is held.'; }
     else if(w === p.cur){ status='active'; why = logged.length+' of '+prescribed.length+' sessions logged so far.'; }
     else if(!graded || score === null){ status='nodata'; why='Too few sessions logged — volume carried forward unchanged.'; }
-    else if(score >= A.greenAt){ status='green';  mult = 1+p.inc;    why='Score '+score.toFixed(3)+' ≥ '+A.greenAt+' — increase '+pct(p.inc)+'%.'; }
-    else if(score >= A.yellowAt){ status='yellow'; mult = 1;          why='Score '+score.toFixed(3)+' ≥ '+A.yellowAt+' — hold volume.'; }
-    else { status='red'; mult = 1-A.deload; why='Score '+score.toFixed(3)+' < '+A.yellowAt+' — reduce '+pct(A.deload)+'%.'; }
+    else if(score >= A.greenAt){ status='green'; mult = 1+p.inc;
+      why='Score '+score.toFixed(3)+' ≥ '+A.greenAt+' — '+
+          (useLadder ? 'step up to rung '+(nextRungOf == null ? rungs[w-1] : nextRungOf)
+                     : 'increase '+pct(p.inc)+'%')+'.'; }
+    else if(score >= A.yellowAt){ status='yellow'; mult = 1;
+      why='Score '+score.toFixed(3)+' ≥ '+A.yellowAt+' — '+
+          (useLadder ? 'hold on rung '+rungs[w-1] : 'hold volume')+'.'; }
+    else { status='red'; mult = 1-A.deload;
+      why='Score '+score.toFixed(3)+' < '+A.yellowAt+' — '+
+          (useLadder ? deloadText(rungs[w-1], nextRungOf) : 'reduce '+pct(A.deload)+'%')+'.'; }
 
     let overridden = null;
     if(cfg.safetyStop && flags.some(f=>f.sev==='high') && (status==='green'||status==='yellow'||status==='active')){
       overridden = status; status = 'flag'; mult = 1-A.deload;
-      why = 'Safety stop — a red-flag run overrides the score.';
+      why = 'Safety stop — a red-flag session overrides the score, '+
+            (useLadder ? deloadText(rungs[w-1], w < nWeeks ? rungs[w] : null) : 'reduce '+pct(A.deload)+'%')+'.';
     }
 
     let next = volOn ? vol*mult : vol;   // hold the starting distance until the ramp begins
@@ -1506,13 +1643,14 @@ function wPlan(p, prog, wk){
           '<div class="sm">It is built from how this week actually felt, so there is nothing to see yet.</div></div></div></div>'+
 
       '<div class="pcard"><h4>Your goal</h4><div class="sm" style="margin-bottom:10px">Agreed with Maciek on '+p.since+'</div>'+
-        '<div class="kv"><span class="k">Working towards</span><span class="v">'+fmtVol(prog.goalTotal, prog.unit)+' a week</span></div>'+
+        '<div class="kv"><span class="k">Working towards</span><span class="v">'+
+          (steps ? rungWeekText(rungAt(p.goalRung), paceOf(p)) : fmtVol(prog.goalTotal, prog.unit))+' a week</span></div>'+
         (steps ? '<div class="kv"><span class="k">This week</span><span class="v">'+(wk.volText||'')+'</span></div>' : '')+
         '<div class="kv"><span class="k">Training days</span><span class="v">'+prog.runDays.map(function(i){return DAYS[i];}).join(' · ')+'</span></div>'+
         '<div class="kv"><span class="k">Programme length</span><span class="v">'+prog.weeks.length+' weeks</span></div>'+
         (prog.weeksAdded > 0
-          ? '<div class="kv"><span class="k">Setbacks so far</span><span class="v">'+prog.weeksAdded+
-            ' week'+(prog.weeksAdded>1?'s':'')+' added</span></div>'
+          ? '<div class="kv"><span class="k">Added so far</span><span class="v">'+prog.weeksAdded+
+            ' week'+(prog.weeksAdded>1?'s':'')+'</span></div>'
           : '')+
         '<div class="kv"><span class="k">Presentation</span><span class="v">'+p.injury+'</span></div>'+
         '<div class="kv"><span class="k">Easy pace</span><span class="v">'+prog.paceBand+'</span></div></div>'+
@@ -1731,7 +1869,7 @@ function renderClinician(){
     '<div class="card"><div class="card-h"><h3>Caseload</h3><span class="spacer"></span>'+
       '<button class="btn btn-sm btn-p" id="btnNew">+ New programme</button></div>'+
       '<table class="cardify"><thead><tr><th>Patient</th><th>Presentation</th><th>Protocol</th><th>Week</th>'+
-      '<th>Volume</th><th>% of goal</th><th>Last week</th><th>Status</th><th></th></tr></thead><tbody>'+
+      '<th>This week</th><th>% of goal</th><th>Last week</th><th>Status</th><th></th></tr></thead><tbody>'+
       rows.map(function(r){
         const wk = r.prog.current, prev = r.prog.weeks[r.p.cur-2];
         const ps = prev ? STATUS[prev.status] : null;
@@ -1741,7 +1879,7 @@ function renderClinician(){
           '<td data-label="Presentation" style="font-size:12.5px;color:var(--ink-2)">'+r.p.injury+'</td>'+
           '<td data-label="Protocol"><span class="pill pill-n">'+r.prog.protocol.name.split(' — ')[0]+'</span></td>'+
           '<td data-label="Week" class="mono">'+r.prog.cur+' / '+r.prog.weeks.length+'</td>'+
-          '<td data-label="Volume" class="mono"><b>'+fmtVol(wk.vol, r.prog.unit)+'</b></td>'+
+          '<td data-label="This week" class="mono"><b>'+(wk.volText || fmtVol(wk.vol, r.prog.unit))+'</b></td>'+
           '<td data-label="% of goal"><div style="display:flex;align-items:center;gap:7px;min-width:130px"><div style="flex:1;height:6px;background:var(--surface-2);border-radius:99px;overflow:hidden;min-width:52px">'+
             '<div style="height:100%;width:'+pct(wk.pctGoal)+'%;background:'+(wk.atGoal?'var(--blue)':'var(--accent)')+'"></div></div>'+
             '<span class="mono" style="font-size:12px">'+pct(wk.pctGoal)+'%</span></div></td>'+
@@ -1822,7 +1960,7 @@ function renderPatientDetail(){
 function weekTable(p, prog){
   return '<div class="card"><div class="card-h"><h3>Week by week</h3>'+
     '<span class="hint">click a week to see every run</span></div>'+
-    '<table><thead><tr><th>Wk</th><th>Dates</th><th>Volume</th>'+
+    '<table><thead><tr><th>Wk</th><th>Dates</th><th>The week</th>'+
       (prog.extras.length ? '<th>Exercises</th>' : '')+
       '<th>Sessions</th><th>Response score</th><th>Decision</th><th>Next</th><th></th></tr></thead><tbody>'+
     prog.weeks.map(function(w){
@@ -1843,7 +1981,15 @@ function weekTable(p, prog){
         '<td class="mono" style="font-size:12.5px">'+w.logged.length+'/'+w.prescribed.length+'</td>'+
         '<td class="mono">'+(w.score!==null ? '<b>'+w.score.toFixed(3)+'</b>' : '<span style="color:var(--muted)">—</span>')+'</td>'+
         '<td><span class="pill '+st.cls+'"><span class="dot '+st.dot+'"></span>'+st.lbl+'</span></td>'+
-        '<td class="mono" style="font-size:12.5px">'+(w.status==='future'?'<span style="color:var(--muted)">'+(w.nextText||fmtVol(w.nextVol, prog.unit))+'</span>':'×'+w.mult.toFixed(2)+' → '+(w.nextText||fmtVol(w.nextVol, prog.unit)))+'</td>'+
+        '<td class="mono" style="font-size:12.5px">'+(w.status==='future'
+          ? '<span style="color:var(--muted)">'+(w.nextText||fmtVol(w.nextVol, prog.unit))+'</span>'
+          /* on the ladder the move is a number of rungs, not a multiplier */
+          : (w.rung != null
+              ? (w.nextRung == null ? '→ goal'
+                 : w.nextRung === w.rung && w.status === 'green'
+                   ? 'half a rung, stays on '+w.rung
+                   : 'rung '+w.rung+' → '+w.nextRung+' '+(w.nextText||''))
+              : '×'+w.mult.toFixed(2)+' → '+(w.nextText||fmtVol(w.nextVol, prog.unit))))+'</td>'+
         '<td style="text-align:right"><button class="btn btn-sm" data-override="'+w.w+'">Override</button></td></tr>';
 
       if(open){
@@ -1969,7 +2115,7 @@ function ladderVerdict(start, goal, inc, actual){
   let s = '<b>'+planned+' weeks</b> to climb from rung '+start+' to rung '+goal+', if every week goes well. '+
           'A sore week does not move the goal, it adds a week.';
   if(actual != null && actual > planned)
-    s += ' <b>Now '+actual+' weeks</b> after '+(actual-planned)+' setback week'+(actual-planned>1?'s':'')+'.';
+    s += ' <b>Now '+actual+' weeks</b>, '+(actual-planned)+' week'+(actual-planned>1?'s':'')+' added by weeks that did not climb.';
   return s;
 }
 
@@ -2535,9 +2681,9 @@ const STAFF = [
 ];
 
 const AUDIT = [
-  {t:'today 09:14', who:'M. Krolikowski', what:'Applied safety stop override — Priya Raman, week 2', sev:'high'},
+  {t:'today 09:14', who:'M. Krolikowski', what:'Safety stop fired — Dave Whitfield, week 9, pain 8/10 during', sev:'high'},
   {t:'today 08:02', who:'system',         what:'Week rollover computed for 6 active programmes', sev:'low'},
-  {t:'yesterday',   who:'M. Krolikowski', what:'Edited goal volume 26 → 30 km — Sarah Nguyen', sev:'med'},
+  {t:'yesterday',   who:'M. Krolikowski', what:'Raised goal rung 22 → 24 — Sarah Nguyen', sev:'med'},
   {t:'yesterday',   who:'J. Bell',        what:'Exported PDF summary — 1 patient record', sev:'med'},
   {t:'15 Aug',      who:'admin',          what:'Protocol “Bone stress injury — cautious” weekly increase 15% → 10%', sev:'high'},
   {t:'14 Aug',      who:'admin',          what:'Invited Amrit Sandhu (Clinician)', sev:'low'}
@@ -3308,25 +3454,28 @@ function adClinic(){
    MESSAGING  -  patient has exactly one thread; clinician has many
    ================================================================== */
 const CHATS = {
-  p1:[ {f:'c',t:'How did the step up to 27.8 km feel this week?',at:'Mon 08:12'},
-       {f:'p',t:'Week 3 was rough honestly — the tendon was stiff most mornings and I felt it during two of the runs.',at:'Mon 19:40'},
-       {f:'c',t:'That is exactly what the drop in your score picked up, so the plan eased you back to 25 km. Nothing to worry about — this is the programme working.',at:'Tue 08:30'},
-       {f:'p',t:'Week 4 felt much better. Back to normal within an hour after each run.',at:'Sun 20:15'} ],
+  p1:[ {f:'c',t:'How did week 3 feel? Your score dropped enough that the plan eased you back a rung.',at:'Wed 08:12'},
+       {f:'p',t:'Rough honestly. The tendon was stiff most mornings and I felt it during two of the runs.',at:'Wed 19:40'},
+       {f:'c',t:'That is exactly what it picked up, so you went back one step rather than pushing through. Nothing to worry about, this is the programme working.',at:'Thu 08:30'},
+       {f:'p',t:'Week 5 was still niggly so it held me there, and this week has felt fine again.',at:'Sun 20:15'} ],
 
-  p2:[ {f:'c',t:'Dave — I have set your goal at 17 km across Tue, Thu and Sun. Start easy.',at:'3 Aug'},
-       {f:'p',t:'Knee is still grumbling the morning after. It has gone down twice now — am I going backwards?',at:'Mon 07:55',unread:true} ],
+  p2:[ {f:'c',t:'Dave, you are on walk/run three days a week, Tuesday, Thursday and Saturday. Run the efforts easy and walk the recoveries.',at:'22 Jun'},
+       {f:'p',t:'The knee has pulled me back three times now. Am I actually going anywhere?',at:'Sat 07:55'},
+       {f:'c',t:'You are, just slowly. Each sore week costs a rung and the finish moves out rather than the goal coming down.',at:'Sat 09:10'},
+       {f:'p',t:'Tuesday was an 8 out of 10 and it is still there this morning. I have stopped for now.',at:'Tue 07:20',unread:true} ],
 
-  p3:[ {f:'c',t:'Welcome Priya. Week 1 is 7 km across Wednesday, Friday and Sunday. Keep every run easy and log it the same day.',at:'10 Aug'},
-       {f:'p',t:'All three done, felt completely fine.',at:'Sun 18:02'},
-       {f:'p',t:'Wednesday was really sore though — about 7/10 during and it is still sore this morning. Should I run Friday?',at:'Wed 07:41',unread:true} ],
+  p3:[ {f:'c',t:'Welcome back to running Priya. Week 1 is three easy runs, Wednesday, Friday and Sunday, and every one of them stays conversational.',at:'13 Jul'},
+       {f:'p',t:'Week 4 was sore, the shin was talking to me on all three runs.',at:'Sun 18:02'},
+       {f:'c',t:'Bone takes a bigger step back than a tendon does, so it moved you down two rungs rather than one. That is deliberate.',at:'Mon 08:15'},
+       {f:'p',t:'Makes sense. This week has been quiet, no shin pain at all.',at:'Wed 07:41',unread:true} ],
 
-  p4:[ {f:'c',t:'You have held your full 18 km for three weeks with no symptoms. I think we talk about discharge.',at:'Mon 09:20'},
+  p4:[ {f:'c',t:'Nine weeks, every one of them green, and you are two rungs off your goal. I think we start talking about discharge.',at:'Mon 09:20'},
        {f:'p',t:'That would be amazing. Does Thursday work for a review?',at:'Mon 12:05',unread:true} ],
 
-  p5:[ {f:'c',t:'Welcome Kelly. Your first week opens Monday — 12.6 km across Wednesday, Friday and Sunday. Any questions before you start, send them here.',at:'17 Aug',unread:true} ],
+  p5:[ {f:'c',t:'Welcome Kelly. Your first week opens Monday: three fifteen minute walks, Wednesday, Friday and Sunday. Brisk, and they should stay pain free the whole way.',at:'17 Aug',unread:true} ],
 
-  p6:[ {f:'p',t:'Missed Friday — away for work and nowhere sensible to run. Did it Sunday instead, hope that is alright.',at:'Sat 16:22'},
-       {f:'c',t:'Not a problem. Log what you actually did rather than what was planned and the maths takes care of itself.',at:'Sat 17:04'} ]
+  p6:[ {f:'p',t:'Missed two of my walks in week 3, away for work. Only logged the Wednesday one.',at:'Sat 16:22'},
+       {f:'c',t:'That is why it held you where you were rather than guessing. Log what you actually did and the maths takes care of itself.',at:'Sat 17:04'} ]
 };
 
 function unreadFor(pid, me){
