@@ -1964,14 +1964,11 @@ function painScale(id, val){
 
 /* the third number, and whether it sat inside the band the clinic set */
 function paceNote(p, d){
-  if(!d.mins) return 'How long were you out for?';
-  if(!d.km)   return 'Add a distance and your average pace appears here. Optional.';
+  if(!d.mins || !d.km) return '';           /* say nothing until there is something to say */
   const pc = d.mins/d.km;
   const fast = p.paceFast || CFG.defPaceFast, slow = p.paceSlow || CFG.defPaceSlow;
-  const where = pc < fast ? 'faster than the '+fmtPace(fast)+' your plan asks for'
-              : pc > slow ? 'slower than the '+fmtPace(slow)+' your plan asks for'
-              : 'inside your '+fmtPace(fast)+' to '+fmtPace(slow)+' band';
-  return 'That is <b>'+fmtPace(pc)+' per km</b>, '+where+'.';
+  const where = pc < fast ? 'faster than your band' : pc > slow ? 'slower than your band' : 'inside your band';
+  return '<b>'+fmtPace(pc)+' per km</b>, '+where;
 }
 
 function drawLogModal(p){
@@ -2003,21 +2000,15 @@ function drawLogModal(p){
         }).join('')+'</div>'+
 
       '<div class="step '+(d.step===1?'on':'')+'">'+
-        '<h4 style="font-size:15.5px;margin-bottom:3px">How long, and how far?</h4>'+
-        '<div style="font-size:12.5px;color:var(--muted);margin-bottom:18px">'+
-          'You were asked for '+d.askMins+' min'+(d.askKm ? ', about '+r1(d.askKm)+' km' : '')+
-          '. Time is the only one we need — change it if the day went differently.</div>'+
+        '<h4 style="font-size:15.5px;margin-bottom:3px">How long were you out?</h4>'+
+        '<div style="font-size:12.5px;color:var(--muted);margin-bottom:20px">The plan asked for '+d.askMins+' min.</div>'+
         '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">'+
-          '<label class="field" style="margin:0"><span class="lbl">Time (minutes)</span>'+
+          '<label class="field" style="margin:0"><span class="lbl">Minutes</span>'+
             '<input type="number" min="0" step="1" id="lg-mins" value="'+(d.mins||'')+'"></label>'+
-          '<label class="field" style="margin:0"><span class="lbl">Distance (km), if you know it</span>'+
-            '<input type="number" min="0" step="0.1" id="lg-km" value="'+(d.km||'')+'" '+
-            'placeholder="'+(d.askKm ? 'about '+r1(d.askKm) : 'optional')+'"></label>'+
+          '<label class="field" style="margin:0"><span class="lbl">Distance, if you have it</span>'+
+            '<input type="number" min="0" step="0.1" id="lg-km" value="'+(d.km||'')+'" placeholder="km"></label>'+
         '</div>'+
-        '<div class="note" id="lg-pace" style="min-height:60px">'+paceNote(p, d)+'</div>'+
-        '<div style="font-size:12px;color:var(--muted);line-height:1.55;margin-top:12px">'+
-          'No watch, no problem. Leave distance blank and the plan carries on exactly the same '+
-          '— it runs on how the session felt, not how fast it was.</div></div>'+
+        '<div id="lg-pace" style="min-height:20px;font-size:12.5px;color:var(--muted)">'+paceNote(p, d)+'</div></div>'+
 
       '<div class="step '+(d.step===2?'on':'')+'">'+
         '<h4 style="font-size:15.5px;margin-bottom:3px">How much pain during the session?</h4>'+
