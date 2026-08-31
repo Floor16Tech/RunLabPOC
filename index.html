@@ -3573,20 +3573,22 @@ function adLadder(){
   };
 
   const walkRows = S.walk.map(function(x, k){
-    return row('<td>'+num(x.min,'walk.'+k+'.min')+' min out</td>'+
-               '<td class="mono" style="color:var(--muted)">0 min</td>'+
-               '<td>'+num(x.days,'walk.'+k+'.days')+' '+MU+'</td>'+
+    return row('<td><div>Walk '+num(x.min,'walk.'+k+'.min')+' min</div>'+
+                 '<div class="sd">brisk, continuous, the same every day</div></td>'+
+               '<td class="mono" style="color:var(--muted)">none</td>'+
+               '<td>'+num(x.days,'walk.'+k+'.days')+' a week</td>'+
                '<td class="mono">'+mins(x.days*x.min)+'</td>'+
-               '<td class="mono" style="color:var(--muted)">0 min</td>',
+               '<td class="mono" style="color:var(--muted)">none</td>',
                'walking', 'walk.'+k);
   }).join('');
 
   const wrRows = S.walkrun.map(function(x, k){
     const tot = (x.run+x.walk)*x.reps, rn = x.run*x.reps, d = S.walkrunDays;
-    return row('<td>'+num(x.run,'walkrun.'+k+'.run')+' run / '+num(x.walk,'walkrun.'+k+'.walk')+
-                 ' walk '+MU+' '+num(x.reps,'walkrun.'+k+'.reps')+'<div class="sd">'+mins(tot)+' out</div></td>'+
+    return row('<td><div>Run '+num(x.run,'walkrun.'+k+'.run')+' min, walk '+
+                 num(x.walk,'walkrun.'+k+'.walk')+' min, '+num(x.reps,'walkrun.'+k+'.reps')+' times</div>'+
+                 '<div class="sd">'+mins(tot)+' out of the door, the same every day</div></td>'+
                '<td class="mono"><b>'+mins(rn)+'</b></td>'+
-               '<td class="mono">'+d+' '+MU+'</td>'+
+               '<td class="mono">'+d+' a week</td>'+
                '<td class="mono">'+mins(tot*d)+'</td>'+
                '<td class="mono"><b>'+mins(rn*d)+'</b></td>',
                'walk/run', 'walkrun.'+k);
@@ -3594,19 +3596,20 @@ function adLadder(){
 
   const runRows = S.run.map(function(x, k){
     const wk = x.lngMin + x.othMin*(x.days-1);
-    return row('<td>'+num(x.lngMin,'run.'+k+'.lngMin')+' long'+
-                 (x.days > 1 ? ' / '+num(x.othMin,'run.'+k+'.othMin')+' others' : '')+
-                 '<div class="sd">'+fmtVol(minsToKm(x.lngMin, pc),'km')+' at 6:30</div></td>'+
+    return row('<td><div>Long run '+num(x.lngMin,'run.'+k+'.lngMin')+' min</div>'+
+                 (x.days > 1 ? '<div style="margin-top:4px">then '+(x.days-1)+' runs of '+
+                    num(x.othMin,'run.'+k+'.othMin')+' min</div>' : '')+
+                 '<div class="sd">the long run is about '+fmtVol(minsToKm(x.lngMin, pc),'km')+' at a 6:30 pace</div></td>'+
                '<td class="mono"><b>'+mins(x.lngMin)+'</b></td>'+
-               '<td>'+num(x.days,'run.'+k+'.days')+' '+MU+'</td>'+
+               '<td>'+num(x.days,'run.'+k+'.days')+' a week</td>'+
                '<td class="mono">'+mins(wk)+'</td>'+
                '<td class="mono"><b>'+mins(wk)+'</b></td>',
                'running', 'run.'+k);
   }).join('');
 
   const G = S.runGen;
-  const head = '<tr><th>Rung</th><th>Phase</th><th>One session</th><th>Of which running</th>'+
-               '<th>A week</th><th>Time on feet</th><th>Running</th><th></th></tr>';
+  const head = '<tr><th>Rung</th><th>Phase</th><th>What a session is</th><th>Running in the biggest one</th>'+
+               '<th>How often</th><th>Time on feet a week</th><th>Running a week</th><th></th></tr>';
 
   $('#adminBody').innerHTML =
     '<div class="note" style="margin-bottom:16px">Every programme is a position on this ladder, so this page is the '+
