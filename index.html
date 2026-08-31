@@ -1698,7 +1698,8 @@ function wToday(p, prog, wk){
           const st = d.log ? '<span class="pill pill-g">Logged</span>'
                            : (d.isPast ? '<span class="pill pill-a">Not logged yet</span>' : '<span class="pill pill-n">Upcoming</span>');
           const det = d.log
-            ? 'Pain '+d.log.pd+'/10 during · '+d.log.pa+'/10 next morning · symptoms '+(d.log.b==='yes'?'settled':'still present')
+            ? (logSummary(d.log) ? '<b>'+logSummary(d.log)+'</b><br>' : '')+
+              'Pain '+d.log.pd+'/10 during · '+d.log.pa+'/10 next morning · symptoms '+(d.log.b==='yes'?'settled':'still present')
             : its.map(function(i){ return itemLabel(i); }).join(' + ');
           const note = easedNote(d);
           return '<div class="runrow"><div class="dot '+(d.log?'dot-g':'dot-n')+'"></div>'+
@@ -1831,7 +1832,10 @@ function wPlan(p, prog, wk){
             return '<div class="sm">'+(it.type==='volume'
               ? '<b>'+it.detail+'</b>'+(it.rx && it.rx.sub ? ' \u00b7 '+it.rx.sub : '')
               : '<b>'+it.name+'</b> — '+it.detail)+'</div>';
-          }).join('')+'</div></div>';
+          }).join('')+
+          (d.log && logSummary(d.log)
+            ? '<div class="sm" style="color:var(--ink-2)">You did '+logSummary(d.log)+'</div>' : '')+
+          '</div></div>';
       }).join('') +'</div>'+
 
     '<div>'+
@@ -1905,6 +1909,23 @@ function wAccount(p, prog, wk){
     '</div></div>';
 }
 
+/* Pace is time over distance, so only two of the three are ever entered and
+   the third is worked out. Time is the one every session has, walking and
+   walk/run included; distance is optional on those. */
+function paceOfLog(l){
+  if(!l || !l.mins || !l.km) return null;
+  return l.mins / l.km;
+}
+function logSummary(l){
+  if(!l) return '';
+  const bits = [];
+  if(l.mins) bits.push(Math.round(l.mins)+' min');
+  if(l.km)   bits.push(r1(l.km)+' km');
+  const pc = paceOfLog(l);
+  if(pc) bits.push(fmtPace(pc)+' per km');
+  return bits.join(' · ');
+}
+
 /* ---------- the log-a-run flow ---------- */
 function openLogModal(p, prog){
   const nx = nextRunOf(prog);
@@ -1912,7 +1933,17 @@ function openLogModal(p, prog){
   const items = itemsOn(p, prog, prog.current, nx.i);
   const done = {};
   items.forEach(function(it){ done[it.key] = (nx.log && nx.log.done && nx.log.done[it.key]) || null; });
+  /* prefilled with what was asked for, so a patient who did exactly that just
+     taps through, and one who did not corrects a number they can see */
+  const R = nx.rung != null ? rungAt(nx.rung) : null;
+  const askMins = R ? (R.phase === 'run' ? R.sessMin : (R.sessMin || R.walkMin))
+                    : Math.round(nx.km * paceOf(p));
+  const askKm   = (R && R.phase === 'run') ? Math.round(minsToKm(R.sessMin, paceOf(p))*10)/10
+                : (!R ? Math.round(nx.km*10)/10 : null);
   STATE.draft = { key:nx.key, day:nx.i, items:items, done:done,
+                  mins: nx.log && nx.log.mins ? nx.log.mins : askMins,
+                  km:   nx.log && nx.log.km   ? nx.log.km   : null,
+                  askMins: askMins, askKm: askKm,
                   pd: nx.log ? nx.log.pd : 2, pa: nx.log ? nx.log.pa : 1,
                   b: nx.log ? nx.log.b : null, step:0 };
   drawLogModal(p);
@@ -1931,13 +1962,25 @@ function painScale(id, val){
   return h + '</div>';
 }
 
+/* the third number, and whether it sat inside the band the clinic set */
+function paceNote(p, d){
+  if(!d.mins) return 'How long were you out for?';
+  if(!d.km)   return 'Add a distance and your average pace appears here. Optional.';
+  const pc = d.mins/d.km;
+  const fast = p.paceFast || CFG.defPaceFast, slow = p.paceSlow || CFG.defPaceSlow;
+  const where = pc < fast ? 'faster than the '+fmtPace(fast)+' your plan asks for'
+              : pc > slow ? 'slower than the '+fmtPace(slow)+' your plan asks for'
+              : 'inside your '+fmtPace(fast)+' to '+fmtPace(slow)+' band';
+  return 'That is <b>'+fmtPace(pc)+' per km</b>, '+where+'.';
+}
+
 function drawLogModal(p){
   const d = STATE.draft;
   const face = function(v){ return v<=2?'\ud83d\ude42':(v<=4?'\ud83d\ude10':(v<=6?'\ud83d\ude15':(v<=8?'\ud83d\ude16':'\ud83d\ude23'))); };
   const word = function(v){ return ['None','Barely there','Mild','Mild','Noticeable','Moderate','Moderate','Strong','Strong','Severe','Worst imaginable'][v]; };
   const allAnswered = d.items.every(function(it){ return d.done[it.key]; });
 
-  const dots = [0,1,2,3].map(function(i){ return '<i class="'+(d.step>=i?'on':'')+'"></i>'; }).join('');
+  const dots = [0,1,2,3,4].map(function(i){ return '<i class="'+(d.step>=i?'on':'')+'"></i>'; }).join('');
 
   $('#modal').innerHTML =
     '<div class="modal-h"><div style="flex:1"><div style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:650">'+
@@ -1960,6 +2003,23 @@ function drawLogModal(p){
         }).join('')+'</div>'+
 
       '<div class="step '+(d.step===1?'on':'')+'">'+
+        '<h4 style="font-size:15.5px;margin-bottom:3px">How long, and how far?</h4>'+
+        '<div style="font-size:12.5px;color:var(--muted);margin-bottom:18px">'+
+          'You were asked for '+d.askMins+' min'+(d.askKm ? ', about '+r1(d.askKm)+' km' : '')+
+          '. Time is the only one we need — change it if the day went differently.</div>'+
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">'+
+          '<label class="field" style="margin:0"><span class="lbl">Time (minutes)</span>'+
+            '<input type="number" min="0" step="1" id="lg-mins" value="'+(d.mins||'')+'"></label>'+
+          '<label class="field" style="margin:0"><span class="lbl">Distance (km), if you know it</span>'+
+            '<input type="number" min="0" step="0.1" id="lg-km" value="'+(d.km||'')+'" '+
+            'placeholder="'+(d.askKm ? 'about '+r1(d.askKm) : 'optional')+'"></label>'+
+        '</div>'+
+        '<div class="note" id="lg-pace" style="min-height:60px">'+paceNote(p, d)+'</div>'+
+        '<div style="font-size:12px;color:var(--muted);line-height:1.55;margin-top:12px">'+
+          'No watch, no problem. Leave distance blank and the plan carries on exactly the same '+
+          '— it runs on how the session felt, not how fast it was.</div></div>'+
+
+      '<div class="step '+(d.step===2?'on':'')+'">'+
         '<h4 style="font-size:15.5px;margin-bottom:3px">How much pain during the session?</h4>'+
         '<div style="font-size:12.5px;color:var(--muted);margin-bottom:20px">At its worst, while you were moving.</div>'+
         '<div style="display:flex;align-items:center;gap:14px;margin-bottom:14px"><div style="font-size:34px">'+face(d.pd)+'</div>'+
@@ -1968,7 +2028,7 @@ function drawLogModal(p){
         painScale('sc-pd', d.pd)+
         '<div class="scaleends"><span>No pain</span><span>Worst imaginable</span></div></div>'+
 
-      '<div class="step '+(d.step===2?'on':'')+'">'+
+      '<div class="step '+(d.step===3?'on':'')+'">'+
         '<h4 style="font-size:15.5px;margin-bottom:3px">And the next morning?</h4>'+
         '<div style="font-size:12.5px;color:var(--muted);margin-bottom:20px">Your first few steps out of bed.</div>'+
         '<div style="display:flex;align-items:center;gap:14px;margin-bottom:14px"><div style="font-size:34px">'+face(d.pa)+'</div>'+
@@ -1977,7 +2037,7 @@ function drawLogModal(p){
         painScale('sc-pa', d.pa)+
         '<div class="scaleends"><span>No pain</span><span>Worst imaginable</span></div></div>'+
 
-      '<div class="step '+(d.step===3?'on':'')+'">'+
+      '<div class="step '+(d.step===4?'on':'')+'">'+
         '<h4 style="font-size:15.5px;margin-bottom:3px">Are your symptoms back to normal?</h4>'+
         '<div style="font-size:12.5px;color:var(--muted);margin-bottom:20px">Back to how they were before this session.</div>'+
         '<div class="yn"><button id="yn-y" class="'+(d.b==='yes'?'on-y':'')+'">Yes, settled</button>'+
@@ -1987,14 +2047,17 @@ function drawLogModal(p){
 
     '<div class="modal-f"><button class="btn" id="m-back" style="flex:0 0 auto">'+(d.step===0?'Cancel':'Back')+'</button>'+
       '<button class="btn btn-p" id="m-next" style="flex:1;justify-content:center'+
-        (((d.step===0 && !allAnswered) || (d.step===3 && !d.b)) ? ';opacity:.45' : '')+'">'+
-        (d.step===3?'Save session':'Continue')+'</button></div>';
+        (((d.step===0 && !allAnswered) || (d.step===1 && !d.mins) || (d.step===4 && !d.b)) ? ';opacity:.45' : '')+'">'+
+        (d.step===4?'Save session':'Continue')+'</button></div>';
 
   $$('.done3').forEach(function(row){
     $$('#modal .done3[data-item="'+row.dataset.item+'"] button').forEach(function(b){
       b.onclick = function(){ STATE.draft.done[row.dataset.item] = b.dataset.done; drawLogModal(p); };
     });
   });
+  const lm = $('#lg-mins'), lk = $('#lg-km');
+  if(lm) lm.oninput = function(){ STATE.draft.mins = +lm.value || null; $('#lg-pace').innerHTML = paceNote(p, STATE.draft); };
+  if(lk) lk.oninput = function(){ STATE.draft.km   = +lk.value || null; $('#lg-pace').innerHTML = paceNote(p, STATE.draft); };
   $$('#sc-pd button').forEach(function(b){ b.onclick=function(){ STATE.draft.pd = +b.dataset.v; drawLogModal(p); }; });
   $$('#sc-pa button').forEach(function(b){ b.onclick=function(){ STATE.draft.pa = +b.dataset.v; drawLogModal(p); }; });
   const y=$('#yn-y'), n=$('#yn-n');
@@ -2004,9 +2067,11 @@ function drawLogModal(p){
   $('#m-back').onclick = function(){ if(d.step===0) closeModal(); else { STATE.draft.step--; drawLogModal(p); } };
   $('#m-next').onclick = function(){
     if(d.step===0 && !allAnswered){ toast('Answer each item first'); return; }
-    if(d.step<3){ STATE.draft.step++; drawLogModal(p); return; }
+    if(d.step===1 && !d.mins){ toast('How long were you out for?'); return; }
+    if(d.step<4){ STATE.draft.step++; drawLogModal(p); return; }
     if(!d.b) return;
-    p.logs[d.key] = { pd:d.pd, pa:d.pa, b:d.b, done:Object.assign({}, d.done) };
+    p.logs[d.key] = { pd:d.pd, pa:d.pa, b:d.b, done:Object.assign({}, d.done),
+                      mins:d.mins || null, km:d.km || null };
     closeModal();
     const prog2 = computeProgram(p, CFG);
     const sc = runScore(p.logs[d.key], algoFor(p, CFG));
@@ -2195,7 +2260,7 @@ function weekTable(p, prog){
         row += '<tr><td colspan="'+(prog.extras.length?9:8)+'" style="background:var(--surface-2);padding:14px 16px">'+
           '<div style="font-size:12.5px;color:var(--ink-2);margin-bottom:10px">'+w.why+'</div>'+
           '<table style="background:var(--surface);border:1px solid var(--line);border-radius:9px;overflow:hidden">'+
-          '<thead><tr><th>Day</th><th>Session</th><th>Completed</th><th>Pain during</th><th>Pain next am</th><th>Back to baseline</th><th>Score</th><th>Weight</th></tr></thead><tbody>'+
+          '<thead><tr><th>Day</th><th>Session</th><th>What they did</th><th>Completed</th><th>Pain during</th><th>Pain next am</th><th>Back to baseline</th><th>Score</th><th>Weight</th></tr></thead><tbody>'+
           w.prescribed.map(function(d){
             const totLoad = sum(w.prescribed.map(function(x){ return x.load; }));
             const share = totLoad ? d.load/totLoad : 0;
@@ -2209,6 +2274,8 @@ function weekTable(p, prog){
               '<td style="font-size:12px">'+its.map(function(it){
                 return it.type==='volume' ? '<b>'+it.detail+'</b>' : it.name+' · step '+(it.level+1);
               }).join('<br>')+'</td>'+
+              '<td style="font-size:11.5px;color:var(--ink-2)">'+
+                (d.log && logSummary(d.log) ? logSummary(d.log) : '—')+'</td>'+
               '<td style="font-size:11.5px;color:var(--ink-2)">'+(d.log ? dnTxt : '—')+'</td>'+
               (d.log
                 ? '<td class="mono">'+d.log.pd+'/10</td><td class="mono">'+d.log.pa+'/10</td>'+
