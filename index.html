@@ -794,7 +794,7 @@ function composeProtocol(inj, act, unit, withIntervals){
     region: inj.region,
     note: inj.note,
     from: {injury:inj.key, activity:act.key},
-    red: red, inc: inc, weeks: Math.max(inj.weeks, act.weeks), uses: 0,
+    red: red, inc: inc, weeks: Math.max(inj.weeks, act.weeks),
     painMode: 'session',
     algo: Object.assign({}, inj.algo, {sessionLoad:3}),
     streams: streams
@@ -812,7 +812,7 @@ function nominalGoal(unit){
    Clinic-wide safety rules live in CFG and cannot be overridden by a protocol. */
 const PROTOCOLS = [
   {id:'tendo', name:'Mid-portion Achilles tendinopathy', region:'Achilles / calf',
-   red:0.35, inc:0.10, weeks:12, uses:14,
+   red:0.35, inc:0.10, weeks:12,
    note:'Load-tolerant tissue. The next morning matters more than pain during the run.',
    algo:{ okDuring:3, okAfter:2, holdDuring:5, holdAfter:4, wDuring:0.30, wAfter:0.50, painStep:0.025,
           deload:0.10, dwell:2, sessionLoad:4, flagPainDuring:7, flagPainAfter:5 },
@@ -821,7 +821,7 @@ const PROTOCOLS = [
    ]},
 
   {id:'bone', name:'Bone stress injury \u2014 cautious', region:'Tibia / metatarsal',
-   red:0.50, inc:0.10, weeks:16, uses:6,
+   red:0.50, inc:0.10, weeks:16,
    note:'Any pain during running is a stop rule. Scored strictly and deloaded hard.',
    algo:{ okDuring:1, okAfter:1, holdDuring:3, holdAfter:2,
           wDuring:0.55, wAfter:0.25, painStep:0.04,
@@ -829,21 +829,21 @@ const PROTOCOLS = [
    streams:[ {key:'run', type:'volume', name:'Running', unit:'km', pace:6.5} ]},
 
   {id:'std', name:'General return to run', region:'Any lower limb',
-   red:0.30, inc:0.15, weeks:8, uses:31,
+   red:0.30, inc:0.15, weeks:8,
    note:'Balanced default for a runner with no red flags and a clear goal distance.',
    algo:{ okDuring:2, okAfter:2, holdDuring:5, holdAfter:4, wDuring:0.40, wAfter:0.40, painStep:0.025,
           deload:0.10, dwell:2, flagPainDuring:7, flagPainAfter:5 },
    streams:[ {key:'run', type:'volume', name:'Running', unit:'km', pace:6.5} ]},
 
   {id:'pht', name:'Proximal hamstring tendinopathy', region:'Ischial / posterior thigh',
-   red:0.35, inc:0.10, weeks:16, uses:5,
+   red:0.35, inc:0.10, weeks:16,
    note:'Compression in hip flexion is the aggravator, so uphill and speed work come last. Slow to settle, and graded on the next morning.',
-   algo:{ okDuring:3, okAfter:2, holdDuring:5, holdAfter:4, wDuring:0.30, wAfter:0.50, painStep:0.025,
-          deload:0.10, dwell:3, flagPainDuring:6, flagPainAfter:4 },
+   algo:{ okDuring:3, okAfter:2, holdDuring:5, holdAfter:4, wDuring:0.30, wAfter:0.50, painStep:0.03,
+          deload:0.10, dwell:3, flagPainDuring:6, flagPainAfter:5 },
    streams:[ {key:'run', type:'volume', name:'Running', unit:'km', pace:6.5} ]},
 
   {id:'acl', name:'Post-ACLR return to sport', region:'Knee',
-   red:0.35, inc:0.15, weeks:10, uses:9,
+   red:0.35, inc:0.15, weeks:10,
    note:'Hop-test clearance before week 1. The running load climbs only on clean weeks.',
    algo:{ okDuring:2, okAfter:1, holdDuring:4, holdAfter:3, wDuring:0.35, wAfter:0.35, painStep:0.03,
           deload:0.10, dwell:2, sessionLoad:5, flagPainDuring:6, flagPainAfter:4 },
@@ -1081,6 +1081,10 @@ function mondayOfWeek(d){
 }
 
 function protocolOf(p){ return PROTOCOLS.filter(function(x){ return x.id===p.protocol; })[0]; }
+/* The caseload is the only source for this. A typed-in figure drifts the moment
+   a patient is added, and a protocol claiming 31 programmes next to a list of
+   six is the sort of thing that makes the rest of the screen hard to believe. */
+function protoUses(id){ return PATIENTS.filter(function(p){ return p.protocol === id; }).length; }
 
 /* the protocol's algorithm layered over the clinic defaults */
 function algoFor(p, cfg){
@@ -2893,7 +2897,7 @@ function newProgramme(){
       weeks: ladderPlannedLength({ startRung:N.startRung, goalRung:N.goalRung, incline:N.incline }) || 12,
       protocol:proto.id, cur:1, since:'today',
       colour:NEWCOLOURS[PATIENTS.length % NEWCOLOURS.length], logs:{}, levels:{} });
-    proto.uses = (proto.uses||0) + 1;
+
     CHATS[id] = [{f:'c', t:'Welcome '+N.name.split(' ')[0]+'. Your first week is set up \u2014 log each session the same day and the plan adapts.', at:'today', unread:true}];
     STATE.clinNew = false; STATE.newProg = null; STATE.clinPatient = id;
     toast('Programme created \u2014 invite sent to the portal');
@@ -3025,7 +3029,7 @@ function adProtocols(){
           '<td class="mono">'+pct(x.red)+'% off</td>'+
           '<td class="mono">+'+pct(x.inc)+'%</td>'+
           '<td style="font-size:12px">'+lean+'</td>'+
-          '<td><span class="pill pill-n">'+x.uses+'</span></td>'+
+          '<td><span class="pill pill-n">'+protoUses(x.id)+'</span></td>'+
           '<td style="text-align:right"><button class="btn btn-sm" data-proto="'+x.id+'">Edit</button></td></tr>';
       }).join('') +'</tbody></table></div>';
   $$('[data-proto]').forEach(function(b){ b.onclick=function(e){ e.stopPropagation(); STATE.protoEdit=b.dataset.proto; render(); }; });
@@ -3215,7 +3219,7 @@ function protocolEditor(){
   if(!isNew && !src){ STATE.protoEdit = null; return adProtocols(); }
 
   if(!STATE.protoDraft || STATE.protoDraft.__for !== STATE.protoEdit){
-    const base = src || { name:'', region:'', note:'', red:0.35, inc:0.10, weeks:12, uses:0,
+    const base = src || { name:'', region:'', note:'', red:0.35, inc:0.10, weeks:12,
                           algo:{}, streams:[{key:'run', type:'volume', name:'Running', unit:'km', pace:6.5}] };
     STATE.protoDraft = {
       __for: STATE.protoEdit,
@@ -3244,7 +3248,7 @@ function protocolEditor(){
       '<button class="btn btn-sm" id="pe-back">\u2039 All protocols</button>'+
       '<div style="flex:1 1 200px;min-width:0"><h2 style="font-size:19px">'+(isNew ? 'New protocol' : D.name)+'</h2>'+
       '<div style="font-size:12.5px;color:var(--muted)">'+(isNew ? 'Define what the patient does and how their answers change it'
-        : src.uses+' programme'+(src.uses===1?'':'s')+' currently using this')+'</div></div>'+
+        : protoUses(src.id)+' programme'+(protoUses(src.id)===1?'':'s')+' currently using this')+'</div></div>'+
       (isNew ? '' : '<button class="btn btn-sm" id="pe-del">Delete</button>')+
       '<button class="btn btn-sm" id="pe-cancel">Cancel</button>'+
       '<button class="btn btn-sm btn-p" id="pe-save">'+(isNew?'Create protocol':'Save changes')+'</button>'+
@@ -3524,14 +3528,14 @@ function protocolEditor(){
                              deload:A.deload, dwell:A.dwell,
                              sessionLoad:A.sessionLoad, flagPainDuring:A.flagPainDuring, flagPainAfter:A.flagPainAfter },
                       streams:D.streams };
-    if(isNew){ PROTOCOLS.push(Object.assign({id:'x'+(PROTOCOLS.length+1), uses:0}, payload)); toast('Protocol created \u2014 audit logged'); }
+    if(isNew){ PROTOCOLS.push(Object.assign({id:'x'+(PROTOCOLS.length+1)}, payload)); toast('Protocol created \u2014 audit logged'); }
     else { Object.assign(src, payload); toast('Protocol saved \u2014 every patient on it is graded the new way from next week'); }
     STATE.protoEdit=null; STATE.protoDraft=null; render();
   };
 
   const del = $('#pe-del');
   if(del) del.onclick = function(){
-    if(src.uses > 0){ toast('In use by '+src.uses+' programmes \u2014 cannot delete'); return; }
+    if(protoUses(src.id) > 0){ toast('In use by '+protoUses(src.id)+' programme(s) \u2014 cannot delete'); return; }
     PROTOCOLS.splice(PROTOCOLS.indexOf(src),1);
     STATE.protoEdit=null; STATE.protoDraft=null; toast('Protocol deleted \u2014 audit logged'); render();
   };
