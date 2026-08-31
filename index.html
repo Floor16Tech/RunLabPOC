@@ -198,7 +198,7 @@ tbody tr.click:hover{background:var(--surface-2)}
 .backbtn{display:none;padding:6px 10px;font-size:16px;line-height:1}
 .lbl-short{display:none}
 .painval{font-size:34px;font-weight:700;letter-spacing:-.03em;line-height:1}
-.scaleends{display:flex;justify-content:space-between;font-size:10.5px;color:var(--muted);margin-top:7px;font-weight:600}
+.sc-end{font-size:10.5px;color:var(--muted);font-weight:600;margin-top:5px;white-space:nowrap}
 .doneitem{border:1px solid var(--line);border-radius:12px;padding:12px 13px;margin-bottom:10px}
 .doneitem .dn2{font-weight:650;font-size:13.5px}
 .doneitem .dd2{font-size:12px;color:var(--muted);line-height:1.45;margin:2px 0 10px}
@@ -1755,7 +1755,7 @@ function wToday(p, prog, wk){
             ? (logSummary(d.log) ? '<b>'+logSummary(d.log)+'</b><br>' : '')+
               'Pain '+d.log.pd+'/10 during'+
               (logComplete(d.log)
-                ? ' · '+d.log.pa+'/10 next morning · symptoms '+(d.log.b==='yes'?'settled':'still present')
+                ? ' · '+d.log.pa+'/10 next morning · '+(d.log.b==='yes'?'calmed down by the next day':'still stirred up the next day')
                 : '')
             : its.map(function(i){ return itemLabel(i); }).join(' + ');
           const note = easedNote(d);
@@ -2008,15 +2008,16 @@ function drawMorningModal(p){
         '<div style="display:flex;align-items:center;gap:14px;margin-bottom:14px"><div style="font-size:34px">'+face(d.pa)+'</div>'+
           '<div><div class="painval">'+d.pa+'<span style="font-size:15px;color:var(--muted);font-weight:600">/10</span></div>'+
           '<div style="font-size:12.5px;color:var(--muted);font-weight:600">'+word(d.pa)+'</div></div></div>'+
-        painScale('am-pa', d.pa)+
-        '<div class="scaleends"><span>No pain</span><span>Worst imaginable</span></div></div>'+
+        painScale('am-pa', d.pa)+'</div>'+
       '<div class="step '+(d.step===1?'on':'')+'">'+
-        '<h4 style="font-size:15.5px;margin-bottom:3px">Did your symptoms settle?</h4>'+
-        '<div style="font-size:12.5px;color:var(--muted);margin-bottom:20px">Back to how they were before that run.</div>'+
-        '<div class="yn"><button id="am-y" class="'+(d.b==='yes'?'on-y':'')+'">Yes, settled</button>'+
-        '<button id="am-n" class="'+(d.b==='no'?'on-n':'')+'">No, still there</button></div>'+
-        '<div style="margin-top:16px;font-size:12px;color:var(--muted);line-height:1.55">This one moves your plan. '+
-        'A week where things did not settle never steps up, however low the pain scores were.</div></div>'+
+        '<h4 style="font-size:15.5px;margin-bottom:3px">Has it calmed back down?</h4>'+
+        '<div style="font-size:12.5px;color:var(--muted);margin-bottom:20px">'+
+          'Not pain free \u2014 just back to how it normally feels on a day you have not run.</div>'+
+        '<div class="yn"><button id="am-y" class="'+(d.b==='yes'?'on-y':'')+'">Yes, back to normal</button>'+
+        '<button id="am-n" class="'+(d.b==='no'?'on-n':'')+'">No, still stirred up</button></div>'+
+        '<div style="margin-top:16px;font-size:12px;color:var(--muted);line-height:1.55">'+
+        'This is the answer that moves your plan the most. Low pain scores on their own never earn '+
+        'a step up if it has not calmed down.</div></div>'+
     '</div>'+
     '<div class="modal-f"><button class="btn" id="am-back" style="flex:0 0 auto">'+(d.step===0?'Later':'Back')+'</button>'+
       '<button class="btn btn-p" id="am-next" style="flex:1;justify-content:center'+
@@ -2073,12 +2074,20 @@ function painCol(v){ return PAIN_COLS[Math.max(0,Math.min(10,v))]; }
 const face = function(v){ return v<=2?'\ud83d\ude42':(v<=4?'\ud83d\ude10':(v<=6?'\ud83d\ude15':(v<=8?'\ud83d\ude16':'\ud83d\ude23'))); };
 const word = function(v){ return ['None','Barely there','Mild','Mild','Noticeable','Moderate','Moderate','Strong','Strong','Severe','Worst imaginable'][v]; };
 
+/* Eleven buttons do not fit on one row on a phone, so the scale wraps to six
+   and five. The end labels used to be a separate row underneath, which put
+   "No pain" under the 6 and "Worst imaginable" under an empty cell. Each row
+   and column is placed explicitly now, so the words sit under their number. */
 function painScale(id, val){
+  const btn = function(v, row, col){
+    return '<button type="button" data-v="'+v+'" style="grid-row:'+row+';grid-column:'+col+
+      (v===val ? ';background:'+painCol(v) : '')+'"'+(v===val ? ' class="on"' : '')+'>'+v+'</button>';
+  };
   let h = '<div class="scale" id="'+id+'">';
-  for(let v=0; v<=10; v++){
-    h += '<button type="button" data-v="'+v+'"'+
-         (v===val ? ' class="on" style="background:'+painCol(v)+'"' : '')+'>'+v+'</button>';
-  }
+  for(let v=0; v<=5; v++)  h += btn(v, 1, v+1);
+  h += '<span class="sc-end" style="grid-row:2;grid-column:1;text-align:left">No pain</span>';
+  for(let v=6; v<=10; v++) h += btn(v, 3, v-5);
+  h += '<span class="sc-end" style="grid-row:4;grid-column:5;text-align:right">Worst imaginable</span>';
   return h + '</div>';
 }
 
@@ -2161,8 +2170,7 @@ function drawLogModal(p){
         '<div style="display:flex;align-items:center;gap:14px;margin-bottom:14px"><div style="font-size:34px">'+face(d.pd)+'</div>'+
           '<div><div class="painval">'+d.pd+'<span style="font-size:15px;color:var(--muted);font-weight:600">/10</span></div>'+
           '<div style="font-size:12.5px;color:var(--muted);font-weight:600">'+word(d.pd)+'</div></div></div>'+
-        painScale('sc-pd', d.pd)+
-        '<div class="scaleends"><span>No pain</span><span>Worst imaginable</span></div></div>'+
+        painScale('sc-pd', d.pd)+'</div>'+
 
     '</div>'+
 
