@@ -687,7 +687,8 @@ function rebuildLadder(){ RUNLADDER = buildLadder(LADDER_SPEC); LADDER_TOP = RUN
 
 /* pace is a band the patient runs inside, in minutes per kilometre */
 function fmtPace(p){
-  const m = Math.floor(p), sec = Math.round((p-m)*60);
+  let m = Math.floor(p), sec = Math.round((p-m)*60);
+  if(sec === 60){ m++; sec = 0; }        /* 5.999 was rendering as 5:60 */
   return m+':'+(sec<10?'0':'')+sec;
 }
 function paceOf(p){
@@ -2095,9 +2096,21 @@ function whenNote(d){
                  : Math.abs(off)+' day'+(off<-1?'s':'')+' earlier than planned.';
 }
 
-/* the third number, and whether it sat inside the band the clinic set */
+function parsePace(t){
+  if(!t) return null;
+  const s = String(t).trim();
+  const m = s.match(/^(\d+)[:.](\d{1,2})$/);
+  if(m) return +m[1] + (+m[2])/60;
+  const n = parseFloat(s);
+  return isFinite(n) && n > 0 ? n : null;
+}
+
+/* Time, distance and pace are one number short of each other, so any two give
+   the third. A watch gives all three, a phone gives distance and pace, a clock
+   on the wall gives time. Whichever two they have is enough. */
 function paceNote(p, d){
-  if(!d.mins || !d.km) return '';           /* say nothing until there is something to say */
+  if(!d.mins) return 'Minutes is the only one we need.';
+  if(!d.km)   return 'Add a distance or a pace and the other one fills itself in.';
   const pc = d.mins/d.km;
   const fast = p.paceFast || CFG.defPaceFast, slow = p.paceSlow || CFG.defPaceSlow;
   const where = pc < fast ? 'faster than your band' : pc > slow ? 'slower than your band' : 'inside your band';
@@ -2134,8 +2147,11 @@ function drawLogModal(p){
         '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">'+
           '<label class="field" style="margin:0"><span class="lbl">Minutes</span>'+
             '<input type="number" min="0" step="1" id="lg-mins" value="'+(d.mins||'')+'"></label>'+
-          '<label class="field" style="margin:0"><span class="lbl">Distance, if you have it</span>'+
+          '<label class="field" style="margin:0"><span class="lbl">Distance</span>'+
             '<input type="number" min="0" step="0.1" id="lg-km" value="'+(d.km||'')+'" placeholder="km"></label>'+
+          '<label class="field" style="margin:0"><span class="lbl">Average pace</span>'+
+            '<input type="text" inputmode="numeric" id="lg-pace-in" value="'+
+              (d.mins && d.km ? fmtPace(d.mins/d.km) : '')+'" placeholder="min:sec per km"></label>'+
         '</div>'+
         '<div id="lg-pace" style="min-height:20px;font-size:12.5px;color:var(--muted)">'+paceNote(p, d)+'</div></div>'+
 
@@ -2161,9 +2177,26 @@ function drawLogModal(p){
     if(v.length===3){ STATE.draft.at = new Date(+v[0], +v[1]-1, +v[2]); $('#lg-when').textContent = whenNote(STATE.draft); }
   };
   if(lt) lt.onchange = function(){ STATE.draft.atTime = lt.value || '17:00'; };
-  const lm = $('#lg-mins'), lk = $('#lg-km');
-  if(lm) lm.oninput = function(){ STATE.draft.mins = +lm.value || null; $('#lg-pace').innerHTML = paceNote(p, STATE.draft); };
-  if(lk) lk.oninput = function(){ STATE.draft.km   = +lk.value || null; $('#lg-pace').innerHTML = paceNote(p, STATE.draft); };
+  const lm = $('#lg-mins'), lk = $('#lg-km'), lp = $('#lg-pace-in');
+  const sync = function(from){
+    const D = STATE.draft;
+    const pc = parsePace(lp ? lp.value : null);
+    if(from === 'pace'){
+      if(D.mins && pc) D.km = Math.round((D.mins/pc)*100)/100;
+      else if(D.km && pc) D.mins = Math.round(D.km*pc);
+    } else if(from === 'km'){
+      if(!D.mins && D.km && pc) D.mins = Math.round(D.km*pc);
+    } else {
+      if(!D.km && D.mins && pc) D.km = Math.round((D.mins/pc)*100)/100;
+    }
+    if(lm && from !== 'mins') lm.value = D.mins || '';
+    if(lk && from !== 'km')   lk.value = D.km   || '';
+    if(lp && from !== 'pace') lp.value = (D.mins && D.km) ? fmtPace(D.mins/D.km) : '';
+    $('#lg-pace').innerHTML = paceNote(p, D);
+  };
+  if(lm) lm.oninput = function(){ STATE.draft.mins = +lm.value || null; sync('mins'); };
+  if(lk) lk.oninput = function(){ STATE.draft.km   = +lk.value || null; sync('km');   };
+  if(lp) lp.oninput = function(){ sync('pace'); };
   $$('#sc-pd button').forEach(function(b){ b.onclick=function(){ STATE.draft.pd = +b.dataset.v; drawLogModal(p); }; });
   $$('#sc-pa button').forEach(function(b){ b.onclick=function(){ STATE.draft.pa = +b.dataset.v; drawLogModal(p); }; });
   const y=$('#yn-y'), n=$('#yn-n');
