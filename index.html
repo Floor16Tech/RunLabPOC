@@ -926,7 +926,9 @@ const PATIENTS = [
            '6-1':{pd:0,pa:1,b:'yes'}, '6-3':{pd:0,pa:0,b:'yes'}, '6-5':{pd:1,pa:0,b:'yes'}, '6-6':{pd:0,pa:0,b:'yes'},
            '7-1':{pd:1,pa:0,b:'yes'}, '7-3':{pd:0,pa:1,b:'yes'}, '7-5':{pd:0,pa:0,b:'yes'}, '7-6':{pd:1,pa:0,b:'yes'},
            '8-1':{pd:0,pa:0,b:'yes'}, '8-3':{pd:1,pa:1,b:'yes'}, '8-5':{pd:0,pa:0,b:'yes'}, '8-6':{pd:0,pa:1,b:'yes'},
-           '9-1':{pd:0,pa:0,b:'yes'}, '9-3':{pd:1,pa:0,b:'yes'} } },
+           /* went a day early and has not done the morning check yet */
+           '9-1':{pd:1, at:'2026-08-17T07:30:00', mins:44, km:7.6},
+           '9-3':{pd:1,pa:0,b:'yes'} } },
 
   /* the very bottom: fifteen minutes of pain free walking, day one, nothing
      logged yet, and the whole climb to easy running still ahead */
@@ -1030,7 +1032,24 @@ function painScore(A, pd, pa){
   const wd = A.wDuring, wa = A.wAfter, t = wd + wa;
   return (wd*Math.max(0, 1 - A.painStep*pd) + wa*Math.max(0, 1 - A.painStep*pa)) / (t || 1);
 }
-function runScore(l, A){ return l ? painScore(A, l.pd, l.pa) : null; }
+/* A session is answered in two sittings, because the questions belong to two
+   different moments. What you did and how it felt goes in after the run. How it
+   was the next morning, and whether it settled, goes in the next morning. Asking
+   all four at once forced the patient to sit down a day and a half later and
+   remember the run, which is the worst time to ask any of it. */
+function logDone(l){ return !!(l && l.pd != null); }              // the run itself
+function logComplete(l){ return !!(l && l.pd != null && l.pa != null && l.b); }
+function runScore(l, A){ return logComplete(l) ? painScore(A, l.pd, l.pa) : null; }
+
+/* the morning after the session, which is when the second half can be asked */
+function morningDue(l, dayDate){
+  if(!logDone(l) || logComplete(l)) return false;
+  const at = l.at ? new Date(l.at) : new Date(dayDate);
+  /* due once the next calendar day has begun, whatever time the run was */
+  const due = new Date(at); due.setHours(0,0,0,0); due.setDate(due.getDate()+1);
+  const now = new Date(TODAY); now.setHours(0,0,0,0);
+  return now >= due;
+}
 
 /* The two thresholds are not constants anybody has to reason about. They are
    the score of two sessions a physiotherapist can name: the worst session they
@@ -1058,8 +1077,12 @@ function easedNote(d){
    rest of that week smaller, and one that crosses the stop rule ends the week
    there. The weekly grade still decides which rung the next week starts on. */
 function sessionGrade(log, A){
-  if(!log) return null;
-  if(log.pd >= A.flagPainDuring || log.pa >= A.flagPainAfter) return 'flag';
+  if(!logDone(log)) return null;
+  /* pain during is enough to stop a week on its own, and that cannot wait for
+     the morning. Everything else waits until the session is complete. */
+  if(log.pd >= A.flagPainDuring) return 'flag';
+  if(!logComplete(log)) return null;
+  if(log.pa >= A.flagPainAfter) return 'flag';
   const sc = painScore(A, log.pd, log.pa);
   let g = sc >= A.greenAt ? 'green' : sc >= A.yellowAt ? 'yellow' : 'red';
   if(log.b !== 'yes' && g !== 'red') g = (g === 'green') ? 'yellow' : 'red';
@@ -1281,7 +1304,7 @@ function weekStatuses(p, A, rungs, n){
     let eased = 0, stop = false;
     dayList.forEach(function(i, di){
       const log = p.logs[w+'-'+i];
-      if(!log || stop) return;
+      if(!logComplete(log) || stop) return;
       logged++;
       const sg = sessionGrade(log, A);
       if(sg === 'flag') flagged = true;
@@ -1420,11 +1443,13 @@ function computeProgram(p, cfg){
 
     const prescribed = days.filter(d=>d.isSession);
     const logged     = prescribed.filter(d=>d.log);
+    const scored     = prescribed.filter(d=>logComplete(d.log));
+    const awaitingAm = prescribed.filter(d=>morningDue(d.log, d.date));
     const missed     = prescribed.filter(d=>!d.log && d.isPast);
     const future     = w > p.cur;
 
     /* volume-weighted mean response score - SUMPRODUCT(km,score)/SUM(km) */
-    const pool  = cfg.blankIsNotNo ? logged : prescribed;
+    const pool  = cfg.blankIsNotNo ? scored : prescribed;
     const wsum  = sum(pool.map(d=>d.load));
     const score = grades ? grades[w-1].score
                 : wsum ? sum(pool.map(d => d.load * (d.score === null ? 0 : d.score))) / wsum : null;
@@ -1526,6 +1551,7 @@ function computeProgram(p, cfg){
                nextText: useLadder ? (w < nWeeks ? rungWeekText(rungAt(rungs[w]), pace) : '\u2014')
                                    : fmtVol(next, unit),
                nextRung: (useLadder && w < nWeeks) ? rungs[w] : null,
+               scored: scored, awaitingAm: awaitingAm,
                doses: weekDoses, moves: moves });
     vol = next;
   }
@@ -1608,6 +1634,9 @@ function renderPatient(){
   const p = P(STATE.patient), prog = computeProgram(p, CFG), wk = prog.current;
   $('#siteMain').innerHTML = ({today:wToday, week:wProgress, plan:wPlan, messages:wMessages, me:wAccount})[STATE.ptab](p, prog, wk);
   const lg = $('#btnLog'); if(lg) lg.onclick = function(){ openLogModal(p, prog); };
+  $$('[data-am]').forEach(function(b){
+    b.onclick = function(){ openMorningModal(p, b.dataset.am, +b.dataset.amday); };
+  });
   if(STATE.ptab==='messages'){ bindComposer(p.id,'p'); scrollThread(); }
 }
 
@@ -1637,6 +1666,25 @@ function wToday(p, prog, wk){
   const items = nx ? itemsOn(p, prog, wk, nx.i) : [];
   const run = items.filter(function(i){ return i.type==='volume'; })[0];
   let hero;
+  /* a run logged yesterday still owes its morning answer, and this is the
+     moment to ask for it rather than burying it in the run entry */
+  const owed = [];
+  prog.weeks.forEach(function(w){
+    w.days.forEach(function(d){ if(morningDue(d.log, d.date)) owed.push({w:w.w, d:d}); });
+  });
+  const amCard = owed.length
+    ? '<div class="pcard" style="border-color:var(--accent);background:var(--accent-soft);margin-bottom:16px">'+
+      '<h4>How is it this morning?</h4>'+
+      '<div class="sm" style="margin-bottom:12px">You logged '+
+      (owed.length>1 ? owed.length+' sessions that still need' : 'a session that still needs')+
+      ' the morning check. It takes ten seconds and it is what moves your plan.</div>'+
+      owed.map(function(o){
+        const ran = o.d.log && o.d.log.at ? new Date(o.d.log.at) : o.d.date;
+        return '<button class="btn btn-p" data-am="'+o.d.key+'" data-amday="'+o.d.i+'" style="margin-right:8px">'+
+          'Check in for '+fmtDate(ran)+'</button>';
+      }).join('')+'</div>'
+    : '';
+
   const halted = wk.days.some(function(d){ return d.stopped; });
   if(!nx){
     hero = halted
@@ -1684,7 +1732,7 @@ function wToday(p, prog, wk){
                         red:'We have eased your volume back slightly. That is a normal, planned part of the programme \u2014 not a setback.',
                         flag:'We have eased your volume back because one session was more painful than we want to see.' }[prev.status] : null;
 
-  return hero +
+  return hero + amCard +
     '<div class="pcard"><h4>Your week at a glance</h4><div class="sm" style="margin-bottom:12px">'+
       fmtDate(wk.start)+' \u2013 '+fmtDate(wk.days[6].date)+' \u00b7 '+wk.prescribed.length+' sessions'+
       (prog.extras.length ? ' · '+prog.streams.length+' parts to the plan' : '')+'</div>'+
@@ -1695,11 +1743,15 @@ function wToday(p, prog, wk){
         '<div class="sm" style="margin-bottom:6px">Log each session the same day if you can. The next-morning answer can wait until the morning.</div>'+
         wk.prescribed.map(function(d){
           const its = itemsOn(p, prog, wk, d.i);
-          const st = d.log ? '<span class="pill pill-g">Logged</span>'
-                           : (d.isPast ? '<span class="pill pill-a">Not logged yet</span>' : '<span class="pill pill-n">Upcoming</span>');
+          const st = logComplete(d.log) ? '<span class="pill pill-g">Logged</span>'
+                   : d.log ? '<span class="pill pill-a">Morning check to do</span>'
+                   : (d.isPast ? '<span class="pill pill-a">Not logged yet</span>' : '<span class="pill pill-n">Upcoming</span>');
           const det = d.log
             ? (logSummary(d.log) ? '<b>'+logSummary(d.log)+'</b><br>' : '')+
-              'Pain '+d.log.pd+'/10 during · '+d.log.pa+'/10 next morning · symptoms '+(d.log.b==='yes'?'settled':'still present')
+              'Pain '+d.log.pd+'/10 during'+
+              (logComplete(d.log)
+                ? ' · '+d.log.pa+'/10 next morning · symptoms '+(d.log.b==='yes'?'settled':'still present')
+                : ' · waiting on tomorrow morning')
             : its.map(function(i){ return itemLabel(i); }).join(' + ');
           const note = easedNote(d);
           return '<div class="runrow"><div class="dot '+(d.log?'dot-g':'dot-n')+'"></div>'+
@@ -1926,6 +1978,60 @@ function logSummary(l){
   return bits.join(' · ');
 }
 
+/* ---------- the morning after ---------- */
+function openMorningModal(p, key, dayIdx){
+  const l = p.logs[key] || {};
+  STATE.am = { key:key, day:dayIdx, pa: l.pa != null ? l.pa : 1, b: l.b || null, step:0 };
+  drawMorningModal(p);
+  $('#scrim').classList.add('on');
+}
+function drawMorningModal(p){
+  const d = STATE.am;
+  const l = p.logs[d.key] || {};
+  const ran = l.at ? new Date(l.at) : null;
+  const dots = [0,1].map(function(i){ return '<i class="'+(d.step>=i?'on':'')+'"></i>'; }).join('');
+  $('#modal').innerHTML =
+    '<div class="modal-h"><div style="flex:1"><div style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:650">'+
+      'The morning after'+(ran ? ' · you ran '+DAYSL[ran.getDay()===0?6:ran.getDay()-1] : '')+'</div>'+
+      '<h3 style="font-size:16px;margin-top:2px">How is it today?</h3></div>'+
+      '<div class="stepdots">'+dots+'</div></div>'+
+    '<div class="modal-b">'+
+      '<div class="step '+(d.step===0?'on':'')+'">'+
+        '<h4 style="font-size:15.5px;margin-bottom:3px">Pain on your first few steps</h4>'+
+        '<div style="font-size:12.5px;color:var(--muted);margin-bottom:20px">Out of bed this morning.</div>'+
+        '<div style="display:flex;align-items:center;gap:14px;margin-bottom:14px"><div style="font-size:34px">'+face(d.pa)+'</div>'+
+          '<div><div class="painval">'+d.pa+'<span style="font-size:15px;color:var(--muted);font-weight:600">/10</span></div>'+
+          '<div style="font-size:12.5px;color:var(--muted);font-weight:600">'+word(d.pa)+'</div></div></div>'+
+        painScale('am-pa', d.pa)+
+        '<div class="scaleends"><span>No pain</span><span>Worst imaginable</span></div></div>'+
+      '<div class="step '+(d.step===1?'on':'')+'">'+
+        '<h4 style="font-size:15.5px;margin-bottom:3px">Are your symptoms back to normal?</h4>'+
+        '<div style="font-size:12.5px;color:var(--muted);margin-bottom:20px">Back to how they were before that session.</div>'+
+        '<div class="yn"><button id="am-y" class="'+(d.b==='yes'?'on-y':'')+'">Yes, settled</button>'+
+        '<button id="am-n" class="'+(d.b==='no'?'on-n':'')+'">No, still there</button></div>'+
+        '<div style="margin-top:16px;font-size:12px;color:var(--muted);line-height:1.55">Saying no does not mean you failed. '+
+        'It tells the plan to give you more room.</div></div>'+
+    '</div>'+
+    '<div class="modal-f"><button class="btn" id="am-back" style="flex:0 0 auto">'+(d.step===0?'Later':'Back')+'</button>'+
+      '<button class="btn btn-p" id="am-next" style="flex:1;justify-content:center'+
+        ((d.step===1 && !d.b) ? ';opacity:.45' : '')+'">'+(d.step===1?'Save':'Continue')+'</button></div>';
+
+  $$('#am-pa button').forEach(function(b){ b.onclick=function(){ STATE.am.pa = +b.dataset.v; drawMorningModal(p); }; });
+  const y=$('#am-y'), n=$('#am-n');
+  if(y) y.onclick = function(){ STATE.am.b='yes'; drawMorningModal(p); };
+  if(n) n.onclick = function(){ STATE.am.b='no';  drawMorningModal(p); };
+  $('#am-back').onclick = function(){ if(d.step===0) closeModal(); else { STATE.am.step--; drawMorningModal(p); } };
+  $('#am-next').onclick = function(){
+    if(d.step<1){ STATE.am.step++; drawMorningModal(p); return; }
+    if(!d.b) return;
+    p.logs[d.key] = Object.assign({}, p.logs[d.key], { pa:d.pa, b:d.b, amAt:TODAY.toISOString() });
+    closeModal();
+    const sc = runScore(p.logs[d.key], algoFor(p, CFG));
+    toast('Thanks \u2014 that session scores '+(sc != null ? sc.toFixed(2) : ''));
+    render();
+  };
+}
+
 /* ---------- the log-a-run flow ---------- */
 function openLogModal(p, prog){
   const nx = nextRunOf(prog);
@@ -1940,12 +2046,17 @@ function openLogModal(p, prog){
                     : Math.round(nx.km * paceOf(p));
   const askKm   = (R && R.phase === 'run') ? Math.round(minsToKm(R.sessMin, paceOf(p))*10)/10
                 : (!R ? Math.round(nx.km*10)/10 : null);
-  STATE.draft = { key:nx.key, day:nx.i, items:items, done:done,
+  /* a run planned for Monday and done on Tuesday is a Tuesday run. The default
+     is the day it was planned for, or today if that day has passed. */
+  const planned = new Date(nx.date);
+  const when = nx.log && nx.log.at ? new Date(nx.log.at)
+             : (planned > TODAY ? planned : new Date(Math.max(planned.getTime(), TODAY.getTime())));
+  STATE.draft = { key:nx.key, day:nx.i, items:items, done:done, date:nx.date,
+                  at: when, atTime: nx.log && nx.log.at ? hhmm(new Date(nx.log.at)) : '17:00',
                   mins: nx.log && nx.log.mins ? nx.log.mins : askMins,
                   km:   nx.log && nx.log.km   ? nx.log.km   : null,
                   askMins: askMins, askKm: askKm,
-                  pd: nx.log ? nx.log.pd : 2, pa: nx.log ? nx.log.pa : 1,
-                  b: nx.log ? nx.log.b : null, step:0 };
+                  pd: nx.log ? nx.log.pd : 2, step:0 };
   drawLogModal(p);
   $('#scrim').classList.add('on');
 }
@@ -1953,6 +2064,10 @@ function openLogModal(p, prog){
 var PAIN_COLS = ['#1a9e55','#2aa04e','#4da344','#77a634','#a8a324','#d99a17',
                  '#e08117','#e46618','#e04a1a','#d9301c','#c4131a'];
 function painCol(v){ return PAIN_COLS[Math.max(0,Math.min(10,v))]; }
+/* shared by both halves of the log flow */
+const face = function(v){ return v<=2?'\ud83d\ude42':(v<=4?'\ud83d\ude10':(v<=6?'\ud83d\ude15':(v<=8?'\ud83d\ude16':'\ud83d\ude23'))); };
+const word = function(v){ return ['None','Barely there','Mild','Mild','Noticeable','Moderate','Moderate','Strong','Strong','Severe','Worst imaginable'][v]; };
+
 function painScale(id, val){
   let h = '<div class="scale" id="'+id+'">';
   for(let v=0; v<=10; v++){
@@ -1960,6 +2075,20 @@ function painScale(id, val){
          (v===val ? ' class="on" style="background:'+painCol(v)+'"' : '')+'>'+v+'</button>';
   }
   return h + '</div>';
+}
+
+function isoDate(d){
+  const x = new Date(d);
+  return x.getFullYear()+'-'+String(x.getMonth()+1).padStart(2,'0')+'-'+String(x.getDate()).padStart(2,'0');
+}
+function hhmm(d){ return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); }
+function whenNote(d){
+  const planned = new Date(d.date); planned.setHours(0,0,0,0);
+  const actual  = new Date(d.at);   actual.setHours(0,0,0,0);
+  const off = Math.round((actual - planned)/86400000);
+  if(off === 0) return 'On the day it was planned.';
+  return off > 0 ? off+' day'+(off>1?'s':'')+' later than planned. That is fine, it is logged on the day you went.'
+                 : Math.abs(off)+' day'+(off<-1?'s':'')+' earlier than planned.';
 }
 
 /* the third number, and whether it sat inside the band the clinic set */
@@ -1973,11 +2102,9 @@ function paceNote(p, d){
 
 function drawLogModal(p){
   const d = STATE.draft;
-  const face = function(v){ return v<=2?'\ud83d\ude42':(v<=4?'\ud83d\ude10':(v<=6?'\ud83d\ude15':(v<=8?'\ud83d\ude16':'\ud83d\ude23'))); };
-  const word = function(v){ return ['None','Barely there','Mild','Mild','Noticeable','Moderate','Moderate','Strong','Strong','Severe','Worst imaginable'][v]; };
   const allAnswered = d.items.every(function(it){ return d.done[it.key]; });
 
-  const dots = [0,1,2,3,4].map(function(i){ return '<i class="'+(d.step>=i?'on':'')+'"></i>'; }).join('');
+  const dots = [0,1,2,3].map(function(i){ return '<i class="'+(d.step>=i?'on':'')+'"></i>'; }).join('');
 
   $('#modal').innerHTML =
     '<div class="modal-h"><div style="flex:1"><div style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:650">'+
@@ -2000,6 +2127,17 @@ function drawLogModal(p){
         }).join('')+'</div>'+
 
       '<div class="step '+(d.step===1?'on':'')+'">'+
+        '<h4 style="font-size:15.5px;margin-bottom:3px">When did you go?</h4>'+
+        '<div style="font-size:12.5px;color:var(--muted);margin-bottom:20px">Planned for '+DAYSL[d.day]+'.</div>'+
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">'+
+          '<label class="field" style="margin:0"><span class="lbl">Date</span>'+
+            '<input type="date" id="lg-date" value="'+isoDate(d.at)+'"></label>'+
+          '<label class="field" style="margin:0"><span class="lbl">Time</span>'+
+            '<input type="time" id="lg-time" value="'+d.atTime+'"></label>'+
+        '</div>'+
+        '<div style="min-height:20px;font-size:12.5px;color:var(--muted)" id="lg-when">'+whenNote(d)+'</div></div>'+
+
+      '<div class="step '+(d.step===2?'on':'')+'">'+
         '<h4 style="font-size:15.5px;margin-bottom:3px">How long were you out?</h4>'+
         '<div style="font-size:12.5px;color:var(--muted);margin-bottom:20px">The plan asked for '+d.askMins+' min.</div>'+
         '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">'+
@@ -2010,7 +2148,7 @@ function drawLogModal(p){
         '</div>'+
         '<div id="lg-pace" style="min-height:20px;font-size:12.5px;color:var(--muted)">'+paceNote(p, d)+'</div></div>'+
 
-      '<div class="step '+(d.step===2?'on':'')+'">'+
+      '<div class="step '+(d.step===3?'on':'')+'">'+
         '<h4 style="font-size:15.5px;margin-bottom:3px">How much pain during the session?</h4>'+
         '<div style="font-size:12.5px;color:var(--muted);margin-bottom:20px">At its worst, while you were moving.</div>'+
         '<div style="display:flex;align-items:center;gap:14px;margin-bottom:14px"><div style="font-size:34px">'+face(d.pd)+'</div>'+
@@ -2019,33 +2157,24 @@ function drawLogModal(p){
         painScale('sc-pd', d.pd)+
         '<div class="scaleends"><span>No pain</span><span>Worst imaginable</span></div></div>'+
 
-      '<div class="step '+(d.step===3?'on':'')+'">'+
-        '<h4 style="font-size:15.5px;margin-bottom:3px">And the next morning?</h4>'+
-        '<div style="font-size:12.5px;color:var(--muted);margin-bottom:20px">Your first few steps out of bed.</div>'+
-        '<div style="display:flex;align-items:center;gap:14px;margin-bottom:14px"><div style="font-size:34px">'+face(d.pa)+'</div>'+
-          '<div><div class="painval">'+d.pa+'<span style="font-size:15px;color:var(--muted);font-weight:600">/10</span></div>'+
-          '<div style="font-size:12.5px;color:var(--muted);font-weight:600">'+word(d.pa)+'</div></div></div>'+
-        painScale('sc-pa', d.pa)+
-        '<div class="scaleends"><span>No pain</span><span>Worst imaginable</span></div></div>'+
-
-      '<div class="step '+(d.step===4?'on':'')+'">'+
-        '<h4 style="font-size:15.5px;margin-bottom:3px">Are your symptoms back to normal?</h4>'+
-        '<div style="font-size:12.5px;color:var(--muted);margin-bottom:20px">Back to how they were before this session.</div>'+
-        '<div class="yn"><button id="yn-y" class="'+(d.b==='yes'?'on-y':'')+'">Yes, settled</button>'+
-        '<button id="yn-n" class="'+(d.b==='no'?'on-n':'')+'">No, still there</button></div>'+
-        '<div style="margin-top:16px;font-size:12px;color:var(--muted);line-height:1.55">Answer honestly. Saying &ldquo;no&rdquo; does not mean you failed \u2014 it tells the plan to give you more room.</div></div>'+
     '</div>'+
 
     '<div class="modal-f"><button class="btn" id="m-back" style="flex:0 0 auto">'+(d.step===0?'Cancel':'Back')+'</button>'+
       '<button class="btn btn-p" id="m-next" style="flex:1;justify-content:center'+
-        (((d.step===0 && !allAnswered) || (d.step===1 && !d.mins) || (d.step===4 && !d.b)) ? ';opacity:.45' : '')+'">'+
-        (d.step===4?'Save session':'Continue')+'</button></div>';
+        (((d.step===0 && !allAnswered) || (d.step===2 && !d.mins)) ? ';opacity:.45' : '')+'">'+
+        (d.step===3?'Save the run':'Continue')+'</button></div>';
 
   $$('.done3').forEach(function(row){
     $$('#modal .done3[data-item="'+row.dataset.item+'"] button').forEach(function(b){
       b.onclick = function(){ STATE.draft.done[row.dataset.item] = b.dataset.done; drawLogModal(p); };
     });
   });
+  const ld = $('#lg-date'), lt = $('#lg-time');
+  if(ld) ld.onchange = function(){
+    const v = ld.value.split('-');
+    if(v.length===3){ STATE.draft.at = new Date(+v[0], +v[1]-1, +v[2]); $('#lg-when').textContent = whenNote(STATE.draft); }
+  };
+  if(lt) lt.onchange = function(){ STATE.draft.atTime = lt.value || '17:00'; };
   const lm = $('#lg-mins'), lk = $('#lg-km');
   if(lm) lm.oninput = function(){ STATE.draft.mins = +lm.value || null; $('#lg-pace').innerHTML = paceNote(p, STATE.draft); };
   if(lk) lk.oninput = function(){ STATE.draft.km   = +lk.value || null; $('#lg-pace').innerHTML = paceNote(p, STATE.draft); };
@@ -2058,16 +2187,19 @@ function drawLogModal(p){
   $('#m-back').onclick = function(){ if(d.step===0) closeModal(); else { STATE.draft.step--; drawLogModal(p); } };
   $('#m-next').onclick = function(){
     if(d.step===0 && !allAnswered){ toast('Answer each item first'); return; }
-    if(d.step===1 && !d.mins){ toast('How long were you out for?'); return; }
-    if(d.step<4){ STATE.draft.step++; drawLogModal(p); return; }
-    if(!d.b) return;
-    p.logs[d.key] = { pd:d.pd, pa:d.pa, b:d.b, done:Object.assign({}, d.done),
-                      mins:d.mins || null, km:d.km || null };
+    if(d.step===2 && !d.mins){ toast('How long were you out for?'); return; }
+    if(d.step<3){ STATE.draft.step++; drawLogModal(p); return; }
+    const at = new Date(d.at);
+    const hm = (d.atTime||'17:00').split(':');
+    at.setHours(+hm[0]||17, +hm[1]||0, 0, 0);
+    const prev = p.logs[d.key] || {};
+    p.logs[d.key] = Object.assign({}, prev, { pd:d.pd, at:at.toISOString(),
+                      done:Object.assign({}, d.done), mins:d.mins || null, km:d.km || null });
     closeModal();
-    const prog2 = computeProgram(p, CFG);
-    const sc = runScore(p.logs[d.key], algoFor(p, CFG));
-    toast('Session saved \u2014 response score ' + sc.toFixed(2) +
-      (prog2.current.flags.some(function(f){return f.sev==='high';}) ? ' \u00b7 your physiotherapist has been alerted' : ''));
+    const A = algoFor(p, CFG);
+    toast(d.pd >= A.flagPainDuring
+      ? 'Saved \u2014 that was sore enough to pause the week, and Maciek has been told'
+      : 'Run saved \u2014 we will ask how it settled tomorrow morning');
     render();
   };
 }
