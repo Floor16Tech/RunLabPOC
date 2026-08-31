@@ -438,6 +438,7 @@ const CFG = {
   holdAfter:       4,
   holdsBeforeDrop: 2,       // a second hold in a row means the rung is wrong
   deload:          0.10,    // else -10 %
+  dwell:           2,       // green weeks before a ladder item steps up
   capAtGoal:       true,    // FIX: never prescribe beyond the agreed goal volume
   blankIsNotNo:    true,    // FIX: an unlogged run is excluded, not scored as "No"
   minRunsToScore:  2,       // FIX: need this many logged runs before the week is graded
@@ -446,6 +447,11 @@ const CFG = {
   flagPainAfter:   5,
   flagNoBaselineStreak: 2,
   maxWeeklyStepKm: 8,       // absolute cap on one week's jump
+  /* what a new programme starts from before the clinician touches anything */
+  defPaceFast:     6.0,
+  defPaceSlow:     7.0,
+  defIncline:      1,
+  sessionLoad:     3,
   maxSessionSpike: 0.10,    // a single session vs the longest of the last 30 days
   safeWeeklyIncrease: 0.10  // above this, injury likelihood climbs sharply
 };
@@ -460,35 +466,35 @@ const CFG = {
    does not care what sport they play.
 
    The ACTIVITY decides how fast we ramp and in what units. The 10% per
-   week evidence is about running load; swimming and golf behave
-   differently, and 8 km means nothing to a swimmer.
+   week evidence is about running load, and this build is a running build:
+   every injury below enters through walking and leaves through running.
 
    Where the two disagree, the more cautious value wins.
    ================================================================== */
 const INJURIES = [
   {key:'achilles', name:'Achilles tendinopathy', region:'Achilles / calf', weeks:12,
    note:'Load-tolerant tissue. The next morning matters more than pain during the session.',
-   typical:['run','walk','court'], maxInc:0.10, defRed:0.35,
+   typical:['run','walk'], maxInc:0.10, defRed:0.35,
    algo:{okDuring:3, okAfter:2, holdDuring:5, holdAfter:4, wDuring:0.30, wAfter:0.50, painStep:0.025, deload:0.10, dwell:2, flagPainDuring:7, flagPainAfter:5}},
 
   {key:'patellar', name:'Patellar tendinopathy', region:'Knee', weeks:12,
    note:'Jumping and deceleration load. Tolerates pain during loading; judge it the morning after.',
-   typical:['court','run'], maxInc:0.10, defRed:0.40,
+   typical:['run','walk'], maxInc:0.10, defRed:0.40,
    algo:{okDuring:3, okAfter:2, holdDuring:5, holdAfter:4, wDuring:0.30, wAfter:0.50, painStep:0.025, deload:0.10, dwell:2, flagPainDuring:7, flagPainAfter:5}},
 
   {key:'gluteal', name:'Gluteal tendinopathy', region:'Lateral hip', weeks:12,
    note:'Compression-sensitive. Hills, stairs and long single-leg stance load it independently of distance.',
-   typical:['walk','run','bike'], maxInc:0.10, defRed:0.40,
+   typical:['walk','run'], maxInc:0.10, defRed:0.40,
    algo:{okDuring:3, okAfter:2, holdDuring:5, holdAfter:4, wDuring:0.30, wAfter:0.50, painStep:0.03, deload:0.10, dwell:2, flagPainDuring:7, flagPainAfter:5}},
 
   {key:'hamstring', name:'Proximal hamstring tendinopathy', region:'Ischial / posterior thigh', weeks:16,
    note:'Slow to settle. Compression in hip flexion aggravates it, so uphill and speed work come last.',
-   typical:['run','walk','bike'], maxInc:0.08, defRed:0.45,
+   typical:['run','walk'], maxInc:0.08, defRed:0.45,
    algo:{okDuring:3, okAfter:2, holdDuring:5, holdAfter:4, wDuring:0.30, wAfter:0.50, painStep:0.03, deload:0.10, dwell:3, flagPainDuring:6, flagPainAfter:5}},
 
   {key:'pfps', name:'Patellofemoral pain', region:'Knee', weeks:10,
    note:'The largest standing caseload in most running clinics. Responds well to volume control.',
-   typical:['run','bike','walk'], maxInc:0.10, defRed:0.35,
+   typical:['run','walk'], maxInc:0.10, defRed:0.35,
    algo:{okDuring:2, okAfter:2, holdDuring:4, holdAfter:3, wDuring:0.40, wAfter:0.40, painStep:0.025, deload:0.10, dwell:2, flagPainDuring:7, flagPainAfter:5}},
 
   {key:'mtss', name:'Medial tibial stress syndrome', region:'Shin', weeks:10,
@@ -503,12 +509,12 @@ const INJURIES = [
 
   {key:'bone', name:'Bone stress injury, low-risk site', region:'Tibia / metatarsal', weeks:16,
    note:'Posteromedial tibia, metatarsals 2 to 4, fibula only. Any pain during loading is a stop rule.',
-   typical:['run','walk','bike','swim'], maxInc:0.08, defRed:0.55,
+   typical:['run','walk'], maxInc:0.08, defRed:0.55,
    algo:{okDuring:1, okAfter:1, holdDuring:3, holdAfter:2, wDuring:0.55, wAfter:0.25, painStep:0.04, deload:0.15, dwell:3, flagPainDuring:4, flagPainAfter:3}},
 
   {key:'aclr', name:'Post-ACLR', region:'Knee', weeks:12,
    note:'Hop-test clearance before starting. Stage changes should be gated on testing, not on a pain score.',
-   typical:['run','court','bike'], maxInc:0.12, defRed:0.40,
+   typical:['run','walk'], maxInc:0.12, defRed:0.40,
    algo:{okDuring:2, okAfter:1, holdDuring:4, holdAfter:3, wDuring:0.35, wAfter:0.35, painStep:0.03, deload:0.10, dwell:2, flagPainDuring:6, flagPainAfter:4}}
 ];
 
@@ -523,21 +529,12 @@ const ACTIVITIES = [
    realistic, so the same dose is expressed as walk/run intervals. The ladder
    below spans the Couch-to-5K range, which runs from about eight minutes of
    running in a session up to thirty continuous. */
-const RUNWALK = [
-  {run:1,   walk:4,   reps:5},   /* 5 min running  - the usual first session back */
-  {run:1,   walk:2,   reps:6},   /* 6  */
-  {run:1,   walk:2,   reps:8},   /* 8  */
-  {run:1,   walk:2,   reps:10},  /* 10 - reps first, intervals stay short */
-  {run:2,   walk:2,   reps:6},   /* 12 */
-  {run:3,   walk:2,   reps:5},   /* 15 */
-  {run:4,   walk:2,   reps:4},   /* 16 */
-  {run:5,   walk:2,   reps:4},   /* 20 */
-  {run:8,   walk:2,   reps:3},   /* 24 */
-  {run:12,  walk:3,   reps:2}    /* 24, then continuous */
-];
+/* the intervals come from the ladder the administrator edits, so there is only
+   ever one walk/run table in the product */
 function runWalkFor(mins){
-  let best = RUNWALK[0], bd = Infinity;
-  RUNWALK.forEach(function(x){
+  const rows = LADDER_SPEC.walkrun;
+  let best = rows[0], bd = Infinity;
+  rows.forEach(function(x){
     const d = Math.abs(x.run*x.reps - mins);
     if(d < bd){ bd = d; best = x; }
   });
@@ -581,54 +578,92 @@ const GOAL_PRESETS = {
    Every rung is a whole week. Frequency belongs to the rung, so nobody
    ends up doing five eight-minute sessions.
    ================================================================== */
-const LONGSHARE = {1:1, 2:0.55, 3:0.40, 4:0.36, 5:0.33, 6:0.32, 7:0.30};
-/* frequency by weekly running minutes: 24 km, 45 km and 75 km at a 6:30 pace */
-function rungDays(m){ return m < 156 ? 3 : m < 292 ? 4 : m < 487 ? 5 : 6; }
 
-const RUNLADDER = (function(){
-  const out = [];
-  let n = 0;
+
+
+/* ==================================================================
+   THE LADDER
+   Everything the ladder is made of lives here, and the administrator
+   edits it. No rung, interval, growth rate or frequency is written
+   into the code below this object: change the spec and every plan,
+   chart and prescription in the product follows.
+   ================================================================== */
+const LADDER_SPEC = {
+  /* the walking rungs: how many sessions a week, and how long each one is */
+  walk: [ {days:3, min:15}, {days:3, min:20}, {days:3, min:25},
+          {days:3, min:30}, {days:4, min:30}, {days:5, min:30} ],
+
+  /* the walk/run rungs. Running minutes climb; the walk breaks shorten. */
+  walkrunDays: 3,
+  walkrun: [ {run:1, walk:4, reps:5},  {run:1, walk:3, reps:6},
+             {run:1, walk:2, reps:8},  {run:1, walk:2, reps:10},
+             {run:2, walk:2, reps:6},  {run:3, walk:2, reps:5},
+             {run:4, walk:2, reps:5},  {run:5, walk:2, reps:5},
+             {run:10, walk:2, reps:3} ],
+
+  /* continuous running, generated rather than listed, in minutes a week */
+  run: {
+    startMin:     90,    /* joins the walk/run rungs where they leave off */
+    topMin:       600,
+    growth:       0.11,  /* per rung */
+    longCapMin:   220,   /* the long run never goes past this */
+    longRampRungs: 4,    /* rungs over which the long run takes its full share */
+    dayBreaks:    [156, 292, 487],   /* weekly minutes at which a day is added */
+    longShare:    {1:1, 2:0.55, 3:0.40, 4:0.36, 5:0.33, 6:0.32, 7:0.30}
+  }
+};
+
+/* how many sessions a week a given weekly running load is spread over */
+function rungDaysFor(m, S){
+  const b = S.run.dayBreaks;
+  for(let k = 0; k < b.length; k++) if(m < b[k]) return 3 + k;
+  return 3 + b.length;
+}
+
+function buildLadder(S){
+  const out = []; let n = 0;
   const add = function(o){ n++; o.rung = n; out.push(o); };
 
-  /* --- walking: duration first, then frequency --- */
-  [[3,15],[3,20],[3,25],[3,30],[4,30],[5,30]].forEach(function(x){
-    add({ phase:'walk', days:x[0], walkMin:x[1],
-          weekMin:x[0]*x[1],
-          text:x[1]+' min walk', longText:x[1]+' min walk' });
+  S.walk.forEach(function(x){
+    add({ phase:'walk', days:x.days, walkMin:x.min, weekMin:x.days*x.min,
+          text:x.min+' min walk', longText:x.min+' min walk' });
   });
 
-  /* --- walk/run: running minutes appear and grow --- */
-  [[1,4,5],[1,3,6],[1,2,8],[1,2,10],[2,2,6],[3,2,5],[4,2,5],[5,2,5],[10,2,3]].forEach(function(x){
-    const run=x[0], walk=x[1], reps=x[2];
-    const tot=(run+walk)*reps, rm=run*reps;
-    add({ phase:'walkrun', days:3, run:run, walk:walk, reps:reps,
-          runMin:rm, sessMin:tot, weekMin:tot*3,
-          text:run+' min run / '+walk+' min walk \u00d7 '+reps,
-          longText:run+' min run / '+walk+' min walk \u00d7 '+reps,
+  const wd = S.walkrunDays || 3;
+  S.walkrun.forEach(function(x){
+    const tot = (x.run + x.walk)*x.reps, rm = x.run*x.reps;
+    add({ phase:'walkrun', days:wd, run:x.run, walk:x.walk, reps:x.reps,
+          runMin:rm, sessMin:tot, weekMin:tot*wd,
+          text:x.run+' min run / '+x.walk+' min walk \u00d7 '+x.reps,
+          longText:x.run+' min run / '+x.walk+' min walk \u00d7 '+x.reps,
           sub:rm+' min of running in '+tot+' min' });
   });
 
-  /* --- continuous running, in minutes so it holds for any pace ---
-     Two rules keep the climb honest. The long run ramps in over the first few
-     rungs instead of taking its full share immediately, so the first
-     continuous week is three equal 30 minute runs and joins the walk/run rungs
-     exactly where they left off. And the long run never shrinks, because
-     adding a training day at the same weekly total always makes the other
-     sessions smaller, and a rung that makes the biggest ask smaller is not a
-     step up. The other sessions absorb the difference. */
-  let m = 90, idx = 0, prevLng = 30;
-  while(m <= 600){
-    const d = rungDays(m), flat = 1/d;
-    const share = flat + (LONGSHARE[d] - flat) * Math.min(1, idx/4);
-    const lng = Math.max(prevLng, Math.min(220, share*m));   // cap near 3.5 hours
+  /* Two rules keep the climb honest. The long run ramps in over the first few
+     rungs instead of taking its full share immediately, so the first continuous
+     week joins the walk/run rungs exactly where they left off; and the long run
+     never shrinks, because adding a training day at the same weekly total always
+     makes the other sessions smaller, and a rung that makes the biggest ask
+     smaller is not a step up. The other sessions absorb it. */
+  const R = S.run;
+  const lastWR = out.filter(function(x){ return x.phase === 'walkrun'; }).pop();
+  let m = R.startMin, idx = 0;
+  let prevLng = lastWR ? lastWR.runMin : R.startMin / 3;
+  while(m <= R.topMin && out.length < 200){
+    const d = rungDaysFor(m, S), flat = 1/d;
+    const share = flat + ((R.longShare[d] || flat) - flat) * Math.min(1, idx/(R.longRampRungs || 1));
+    const lng = Math.max(prevLng, Math.min(R.longCapMin, share*m));
     add({ phase:'run', days:d,
           weekMin:Math.round(m), lngMin:Math.round(lng),
           othMin:Math.round(d > 1 ? Math.max(0, (m-lng)/(d-1)) : 0) });
-    prevLng = lng; idx++; m *= 1.11;
+    prevLng = lng; idx++; m *= (1 + (R.growth || 0.11));
   }
   return out;
-})();
-const LADDER_TOP = RUNLADDER.length;
+}
+
+let RUNLADDER = buildLadder(LADDER_SPEC);
+let LADDER_TOP = RUNLADDER.length;
+function rebuildLadder(){ RUNLADDER = buildLadder(LADDER_SPEC); LADDER_TOP = RUNLADDER.length; }
 
 /* pace is a band the patient runs inside, in minutes per kilometre */
 function fmtPace(p){
@@ -692,7 +727,8 @@ function rungLabel(n, pace){
 function rungPhase(r){
   return r.phase === 'walk' ? 'walking'
        : r.phase === 'walkrun' ? 'walk/run'
-       : r.weekMin < 156 ? 'easy running' : r.weekMin < 325 ? 'building' : 'high volume';
+       : r.weekMin < LADDER_SPEC.run.dayBreaks[0] ? 'easy running'
+       : r.weekMin < LADDER_SPEC.run.dayBreaks[1] ? 'building' : 'high volume';
 }
 function weeksToClimb(from, to, inclinePerWeek){
   if(inclinePerWeek <= 0) return null;
@@ -742,7 +778,8 @@ function activityByKey(k){ return ACTIVITIES.filter(function(x){ return x.key===
 function composeProtocol(inj, act, unit, withIntervals){
   const inc = Math.min(inj.maxInc, act.maxInc);
   const red = Math.max(inj.defRed, act.defRed);
-  const iv = withIntervals && (act.key === 'run' || act.key === 'walk');
+  /* walk/run is not a separate stream any more: it is the bottom of the ladder */
+  const iv = false;
   const streams = [];
   if(iv){
     streams.push({key:'intervals', type:'interval', name:'Walk/run', days:[1,3,5],
@@ -807,19 +844,11 @@ const PROTOCOLS = [
 
   {id:'acl', name:'Post-ACLR return to sport', region:'Knee',
    red:0.35, inc:0.15, weeks:10, uses:9,
-   note:'Hop-test clearance before week 1. Court exposure climbs only on clean weeks.',
+   note:'Hop-test clearance before week 1. The running load climbs only on clean weeks.',
    algo:{ okDuring:2, okAfter:1, holdDuring:4, holdAfter:3, wDuring:0.35, wAfter:0.35, painStep:0.03,
           deload:0.10, dwell:2, sessionLoad:5, flagPainDuring:6, flagPainAfter:4 },
    streams:[
-     {key:'run',   type:'volume', name:'Running', unit:'km', pace:6.5},
-     {key:'court', type:'ladder', name:'Return to court', days:[1,4], from:2, forWeeks:null, every:2, rungs:[
-        'Individual drills, no ball',
-        'Individual drills with ball',
-        'Non-contact team drills',
-        'Full training, non-contact',
-        'Full contact training',
-        'Partial game minutes',
-        'Full game']}
+     {key:'run',   type:'volume', name:'Running', unit:'km', pace:6.5}
    ]}
 ];
 
@@ -969,8 +998,8 @@ PATIENTS.forEach(function(p){
     p.goalRung  = rungForVolume(sum(p.goal), 6.5);
     p.incline   = 1;
     p.sessionOverrides = {};
-    p.paceFast  = 6.0;   /* fastest they should run, min per km */
-    p.paceSlow  = 7.0;   /* slowest, below which it stops being a run */
+    p.paceFast  = CFG.defPaceFast;   /* fastest they should run, min per km */
+    p.paceSlow  = CFG.defPaceSlow;   /* slowest, below which it stops being a run */
   }
 });
 
@@ -985,7 +1014,7 @@ PATIENTS.forEach(function(p){
 });
 
 /* where each patient currently sits on each ladder */
-const START_LEVELS = { p1:{}, p2:{}, p3:{}, p4:{court:3}, p5:{}, p6:{} };
+const START_LEVELS = { p1:{}, p2:{}, p3:{}, p4:{}, p5:{}, p6:{} };
 PATIENTS.forEach(function(p){ p.levels = START_LEVELS[p.id] || {}; });
 
 /* ==================================================================
@@ -2636,8 +2665,8 @@ const NEWCOLOURS = ['#0a0a0a','#3f3f46','#E31B23','#52525b','#71717a','#27272a']
 function newProgramme(){
   const N = STATE.newProg = STATE.newProg || {step:1, name:'', injury:null, activity:null, unit:null,
                                               goalWeek:0, goalSession:0, days:[], longDay:6,
-                                              paceFast:6.0, paceSlow:7.0,
-                                              startRung:1, goalRung:LADDER_TOP, incline:1,
+                                              paceFast:CFG.defPaceFast, paceSlow:CFG.defPaceSlow,
+                                              startRung:1, goalRung:LADDER_TOP, incline:CFG.defIncline,
                                               goal:[0,0,0,0,0,0,0], red:null, inc:null, weeks:null};
   const nsync = function(){ N.goal = distributeGoal(N.goalWeek, N.goalSession, N.days, N.longDay); };
   nsync();
@@ -2914,7 +2943,7 @@ const AUDIT = [
 
 function renderAdmin(){
   $('#adminRoot').innerHTML = '<div id="adminBody"></div>';
-  ({protocols:adProtocols, algorithm:adAlgorithm, accounts:adAccounts, clinic:adClinic})[STATE.adminTab]();
+  ({protocols:adProtocols, ladder:adLadder, algorithm:adAlgorithm, accounts:adAccounts, clinic:adClinic})[STATE.adminTab]();
 }
 
 /* one place that turns an algorithm into something readable, used by the
@@ -3078,8 +3107,8 @@ function protocolComposer(){
   }
 
   if(C.step === 2){
-    body = '<div class="note" style="margin-bottom:16px">The activity decides how fast the ramp goes and in what units. '+
-      'The 10% per week evidence is about running load; swimming and golf behave differently, and 8 km means nothing to a swimmer.</div>'+
+    body = '<div class="note" style="margin-bottom:16px">Every programme in this build is a return to running, '+
+      'entered through walking. The activity sets the units and the ceiling on how fast the ramp may go.</div>'+
       '<div class="pickgrid">'+ ACTIVITIES.map(function(a){
         const typical = inj && inj.typical.indexOf(a.key) >= 0;
         return '<button class="pick '+(C.activity===a.key?'on':'')+'" data-act="'+a.key+'">'+
@@ -3508,6 +3537,134 @@ function protocolEditor(){
   };
 }
 
+/* The ladder editor. Every rung in the product comes from LADDER_SPEC, and
+   every field here writes to it, so there is nothing about the progression that
+   is set in code and hidden from the clinic. */
+function adLadder(){
+  const S = LADDER_SPEC, pc = 6.5;
+  const num = function(v, id, step, w){
+    return '<input type="number" value="'+v+'" data-lad="'+id+'" step="'+(step||1)+'" '+
+      'style="width:'+(w||64)+'px;padding:6px 8px;border:1px solid var(--line);border-radius:7px;text-align:right;font-weight:650">';
+  };
+  const del = function(id){ return '<button class="btn btn-sm" data-ladrm="'+id+'" title="Remove this rung">Remove</button>'; };
+
+  const walkRows = S.walk.map(function(x, k){
+    return '<tr><td class="mono">'+(k+1)+'</td>'+
+      '<td>'+num(x.min, 'walk.'+k+'.min')+' min a session</td>'+
+      '<td>'+num(x.days, 'walk.'+k+'.days')+' sessions a week</td>'+
+      '<td class="mono">'+(x.days*x.min)+' min</td>'+
+      '<td style="text-align:right">'+del('walk.'+k)+'</td></tr>';
+  }).join('');
+
+  const wrRows = S.walkrun.map(function(x, k){
+    const tot = (x.run+x.walk)*x.reps;
+    return '<tr><td class="mono">'+(S.walk.length+k+1)+'</td>'+
+      '<td>'+num(x.run, 'walkrun.'+k+'.run')+' min run</td>'+
+      '<td>'+num(x.walk, 'walkrun.'+k+'.walk')+' min walk</td>'+
+      '<td>'+num(x.reps, 'walkrun.'+k+'.reps')+' ×</td>'+
+      '<td class="mono">'+(x.run*x.reps)+' min running in '+tot+'</td>'+
+      '<td style="text-align:right">'+del('walkrun.'+k)+'</td></tr>';
+  }).join('');
+
+  const preview = RUNLADDER.map(function(r){
+    return '<tr><td class="mono">'+r.rung+'</td><td>'+rungPhase(r)+'</td>'+
+      '<td><b>'+rungStartText(r, pc)+'</b></td>'+
+      '<td>'+rungShapeText(r, pc)+'</td>'+
+      '<td class="mono">'+r.days+'</td>'+
+      '<td class="mono">'+rungWeekText(r, pc)+'</td></tr>';
+  }).join('');
+
+  $('#adminBody').innerHTML =
+    '<div class="note" style="margin-bottom:16px">Every programme is a position on this ladder, so this page is the '+
+    'progression itself. Change a rung and every plan, chart and prescription in the product follows. '+
+    'Distances are shown at a 6:30 pace; each patient sees their own.</div>'+
+
+    '<div class="card" style="margin-bottom:16px"><div class="card-h"><h3>Walking rungs</h3>'+
+      '<span class="spacer"></span><button class="btn btn-sm" data-ladadd="walk">+ Add a walking rung</button></div>'+
+      '<div class="card-b"><div style="overflow-x:auto"><table><thead><tr><th>Rung</th><th>Session</th><th>Frequency</th>'+
+      '<th>A week</th><th></th></tr></thead><tbody>'+walkRows+'</tbody></table></div></div></div>'+
+
+    '<div class="card" style="margin-bottom:16px"><div class="card-h"><h3>Walk/run rungs</h3>'+
+      '<span class="spacer"></span><button class="btn btn-sm" data-ladadd="walkrun">+ Add a walk/run rung</button></div>'+
+      '<div class="card-b">'+
+      '<div style="overflow-x:auto"><table><thead><tr><th>Rung</th><th>Run</th><th>Walk</th><th>Repeats</th>'+
+      '<th>A session</th><th></th></tr></thead><tbody>'+wrRows+'</tbody></table></div>'+
+      '<div style="margin-top:14px;display:flex;align-items:center;gap:10px">'+
+        '<span class="st">Sessions a week on the walk/run rungs</span>'+num(S.walkrunDays, 'walkrunDays')+'</div>'+
+      '</div></div>'+
+
+    '<div class="card" style="margin-bottom:16px"><div class="card-h"><h3>Continuous running</h3>'+
+      '<span class="hint">generated, not listed</span></div><div class="card-b">'+
+      '<div class="note" style="margin-bottom:14px">The running rungs are worked out from these numbers. '+
+      '<b>Starts at</b> should match the running minutes on the last walk/run rung, or the climb will jump at the handoff.</div>'+
+      '<div class="grid g2" style="align-items:start">'+
+        '<div>'+
+          '<div class="setrow"><div style="flex:1"><div class="st">Starts at</div>'+
+            '<div class="sd">Minutes of running a week on the first continuous rung</div></div>'+num(S.run.startMin,'run.startMin')+'</div>'+
+          '<div class="setrow"><div style="flex:1"><div class="st">Tops out at</div>'+
+            '<div class="sd">Where the ladder ends</div></div>'+num(S.run.topMin,'run.topMin')+'</div>'+
+          '<div class="setrow"><div style="flex:1"><div class="st">Growth per rung</div>'+
+            '<div class="sd">0.11 is the 10 to 11% a week the evidence supports</div></div>'+num(S.run.growth,'run.growth',0.01)+'</div>'+
+        '</div><div>'+
+          '<div class="setrow"><div style="flex:1"><div class="st">Long run ceiling</div>'+
+            '<div class="sd">Minutes. The long run never goes past this</div></div>'+num(S.run.longCapMin,'run.longCapMin')+'</div>'+
+          '<div class="setrow"><div style="flex:1"><div class="st">Long run ramps over</div>'+
+            '<div class="sd">Rungs taken to reach its full share, so the handoff is smooth</div></div>'+num(S.run.longRampRungs,'run.longRampRungs')+'</div>'+
+          '<div class="setrow"><div style="flex:1"><div class="st">Add a session at</div>'+
+            '<div class="sd">Weekly running minutes for the 4th, 5th and 6th session</div></div>'+
+            '<div style="display:flex;gap:6px">'+num(S.run.dayBreaks[0],'run.dayBreaks.0',1,58)+
+              num(S.run.dayBreaks[1],'run.dayBreaks.1',1,58)+num(S.run.dayBreaks[2],'run.dayBreaks.2',1,58)+'</div></div>'+
+        '</div></div>'+
+      '<span class="lbl" style="margin-top:14px">Share of the week the long run takes</span>'+
+      '<div style="display:flex;gap:10px;flex-wrap:wrap">'+
+        [3,4,5,6].map(function(d){ return '<div style="display:flex;align-items:center;gap:6px">'+
+          '<span class="sd">'+d+' a week</span>'+num(S.run.longShare[d],'run.longShare.'+d,0.01,62)+'</div>'; }).join('')+
+      '</div></div></div>'+
+
+    '<div class="card"><div class="card-h"><h3>The ladder as it stands</h3>'+
+      '<span class="hint">'+LADDER_TOP+' rungs</span></div><div class="card-b">'+
+      '<div style="overflow-x:auto;max-height:420px;overflow-y:auto"><table><thead><tr><th>Rung</th><th>Phase</th>'+
+      '<th>Biggest session</th><th>Written as</th><th>Days</th><th>A week</th></tr></thead><tbody>'+
+      preview+'</tbody></table></div></div></div>';
+
+  const setPath = function(path, v){
+    const parts = path.split('.');
+    let node = LADDER_SPEC;
+    for(let k = 0; k < parts.length-1; k++) node = node[parts[k]];
+    node[parts[parts.length-1]] = v;
+  };
+  $$('[data-lad]').forEach(function(el){
+    el.onchange = function(){
+      const v = +el.value;
+      if(!isFinite(v) || v <= 0) return;
+      setPath(el.dataset.lad, v);
+      rebuildLadder(); toast('Ladder updated \u2014 every plan recalculated'); render();
+    };
+  });
+  $$('[data-ladadd]').forEach(function(el){
+    el.onclick = function(){
+      const g = el.dataset.ladadd;
+      if(g === 'walk'){
+        const last = LADDER_SPEC.walk[LADDER_SPEC.walk.length-1] || {days:3, min:15};
+        LADDER_SPEC.walk.push({days:last.days, min:last.min + 5});
+      } else {
+        const last = LADDER_SPEC.walkrun[LADDER_SPEC.walkrun.length-1] || {run:1, walk:4, reps:5};
+        LADDER_SPEC.walkrun.push({run:last.run + 1, walk:last.walk, reps:last.reps});
+      }
+      rebuildLadder(); toast('Rung added'); render();
+    };
+  });
+  $$('[data-ladrm]').forEach(function(el){
+    el.onclick = function(){
+      const parts = el.dataset.ladrm.split('.');
+      const arr = LADDER_SPEC[parts[0]];
+      if(arr.length <= 1){ toast('A phase needs at least one rung'); return; }
+      arr.splice(+parts[1], 1);
+      rebuildLadder(); toast('Rung removed \u2014 every plan recalculated'); render();
+    };
+  });
+}
+
 function adAlgorithm(){
   const fixes = [
     ['blankIsNotNo','An unlogged session is excluded, not scored as \u201cNo\u201d',
@@ -3519,13 +3676,18 @@ function adAlgorithm(){
     ['safetyStop','Hard red flags override an otherwise-green week',
      'A single severe session stops progression and alerts the clinician, however well the rest of the week scored.'],
     ['maxWeeklyStepKm','Cap the absolute size of one weekly jump',
-     'A 15% increase on 60 km is 9 km in one week. A percentage rule needs an absolute ceiling.']
+     'A 15% increase on 60 km is 9 km in one week. A percentage rule needs an absolute ceiling.'],
+    ['flagNoBaselineStreak','Sessions in a row that did not settle before a flag is raised',
+     'Repeatedly not settling is a pattern worth a clinician looking at, even when no single session was severe.']
   ];
-  const dflt = ['wDuring','wAfter','painStep','okDuring','okAfter','holdDuring','holdAfter','deload','dwell'];
+  const dflt = ['wDuring','wAfter','painStep','okDuring','okAfter','holdDuring','holdAfter',
+                'deload','dwell','flagPainDuring','flagPainAfter','holdsBeforeDrop'];
   const labels = { wDuring:'Pain during', wAfter:'Next morning', painStep:'Pain step',
                    okDuring:'Progress to', okAfter:'Progress to, am',
                    holdDuring:'Hold to', holdAfter:'Hold to, am',
-                   deload:'Deload', dwell:'Weeks per step' };
+                   deload:'Deload', dwell:'Weeks per step',
+                   flagPainDuring:'Flag during', flagPainAfter:'Flag next am',
+                   holdsBeforeDrop:'Holds to drop' };
 
   $('#adminBody').innerHTML =
     '<div class="grid g2" style="align-items:start;margin-bottom:16px">'+
@@ -3568,7 +3730,10 @@ function adAlgorithm(){
          ['painStep','Cost of one point of pain'],
          ['okDuring','Progress up to, pain during'],['okAfter','Progress up to, next morning'],
          ['holdDuring','Hold up to, pain during'],['holdAfter','Hold up to, next morning'],
-         ['deload','Deload amount'],['dwell','Green weeks per ladder step']].map(function(r){
+         ['deload','Deload amount'],['dwell','Green weeks per ladder step'],
+         ['flagPainDuring','Red flag at, pain during'],['flagPainAfter','Red flag at, next morning'],
+         ['holdsBeforeDrop','Holds in a row before easing back'],
+         ['sessionLoad','Minutes credited to a strength session']].map(function(r){
           return '<div class="setrow"><div style="flex:1"><div class="st">'+r[1]+'</div></div>'+
             '<input type="number" step="0.005" value="'+CFG[r[0]]+'" data-cfg="'+r[0]+'" style="width:78px;padding:6px 8px;border:1px solid var(--line);border-radius:7px;text-align:right;font-weight:600"></div>';
         }).join('')+
@@ -3579,9 +3744,13 @@ function adAlgorithm(){
       '<div class="card"><div class="card-h"><h3>Safety rules</h3>'+
         '<span class="hint">clinic-wide, not overridable by a protocol</span></div><div class="card-b">'+
         fixes.map(function(f){
-          const on = !!CFG[f[0]];
+          const v = CFG[f[0]];
+          const control = (typeof v === 'boolean')
+            ? '<div class="toggle '+(v?'on':'')+'" data-tog="'+f[0]+'"><i></i></div>'
+            : '<input type="number" step="1" min="0" value="'+v+'" data-cfg="'+f[0]+'" '+
+              'style="width:72px;padding:6px 8px;border:1px solid var(--line);border-radius:7px;text-align:right;font-weight:650">';
           return '<div class="setrow"><div style="flex:1"><div class="st">'+f[1]+'</div><div class="sd">'+f[2]+'</div></div>'+
-            '<div class="toggle '+(on?'on':'')+'" data-tog="'+f[0]+'"><i></i></div></div>';
+            control+'</div>';
         }).join('')+
         '<div class="note" style="margin-top:12px"><b>Change control.</b> Editing anything on this page re-grades only future weeks. Historical decisions keep the settings that were in force when they were made, and the change is written to the audit log.</div>'+
       '</div></div>'+
@@ -3847,7 +4016,7 @@ const NAVS = {
                   go:function(){ STATE.clinTab='caseload'; STATE.clinPatient=null; }},
                  {k:'messages', lbl:'Messages', badge:totalUnread('c'), on:STATE.clinTab==='messages',
                   go:function(){ STATE.clinTab='messages'; STATE.clinPatient=null; }}]; },
-  admin:     function(){ return [['protocols','Protocols'],['algorithm','Algorithm'],
+  admin:     function(){ return [['protocols','Protocols'],['ladder','The ladder','Ladder'],['algorithm','Algorithm'],
                                  ['accounts','Accounts'],['clinic','Clinic & compliance','Clinic']].map(function(t){
                  return {k:t[0], lbl:t[1], short:t[2], on:STATE.adminTab===t[0],
                          go:function(){ STATE.adminTab=t[0]; }}; }); }
