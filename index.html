@@ -610,20 +610,19 @@ const LADDER_SPEC = {
   /* the generator that fills them */
   runGen: {
     startMin:     90,    /* joins the walk/run rungs where they leave off */
-    topMin:       600,
+    topMin:       360,   /* six sessions of an hour; raise it and raise the cap too */
     growth:       0.11,  /* per rung */
-    longCapMin:   220,   /* the long run never goes past this */
-    longRampRungs: 4,    /* rungs over which the long run takes its full share */
-    dayBreaks:    [156, 292, 487],   /* weekly minutes at which a day is added */
-    longShare:    {1:1, 2:0.55, 3:0.40, 4:0.36, 5:0.33, 6:0.32, 7:0.30}
+    maxSessionMin: 60,   /* a run never goes past this; the week adds a day instead */
+    maxDays:       6
   }
 };
 
-/* how many sessions a week a given weekly running load is spread over */
+/* A rehab plan does not build one enormous run, it caps the run and adds a day.
+   So the number of sessions is whatever it takes to keep each one under the
+   ceiling, and every run in the week is the same length. */
 function rungDaysFor(m, S){
-  const b = S.runGen.dayBreaks;
-  for(let k = 0; k < b.length; k++) if(m < b[k]) return 3 + k;
-  return 3 + b.length;
+  const G = S.runGen;
+  return Math.max(3, Math.min(G.maxDays || 6, Math.ceil(m / (G.maxSessionMin || 60))));
 }
 
 /* Fill the running rungs from the generator. Two rules keep the climb honest.
@@ -635,15 +634,11 @@ function rungDaysFor(m, S){
 function generateRunRungs(S){
   const G = S.runGen, rows = [];
   const lastWR = S.walkrun[S.walkrun.length-1];
-  let m = G.startMin, idx = 0;
-  let prevLng = lastWR ? lastWR.run*lastWR.reps : G.startMin/3;
+  let m = G.startMin;
   while(m <= G.topMin && rows.length < 120){
-    const d = rungDaysFor(m, S), flat = 1/d;
-    const share = flat + ((G.longShare[d] || flat) - flat) * Math.min(1, idx/(G.longRampRungs || 1));
-    const lng = Math.max(prevLng, Math.min(G.longCapMin, share*m));
-    rows.push({ days:d, lngMin:Math.round(lng),
-                othMin:Math.round(d > 1 ? Math.max(0, (m-lng)/(d-1)) : 0) });
-    prevLng = lng; idx++; m *= (1 + (G.growth || 0.11));
+    const d = rungDaysFor(m, S);
+    rows.push({ days:d, sessMin:Math.round(m/d) });
+    m *= (1 + (G.growth || 0.11));
   }
   return rows;
 }
@@ -656,7 +651,7 @@ function rungParts(r){
   if(r.phase === 'walkrun')
     return { sessMin:r.sessMin, sessRun:r.runMin,
              weekMin:r.sessMin*r.days, weekRun:r.runMin*r.days };
-  return { sessMin:r.lngMin, sessRun:r.lngMin, weekMin:r.weekMin, weekRun:r.weekMin };
+  return { sessMin:r.sessMin, sessRun:r.sessMin, weekMin:r.weekMin, weekRun:r.weekMin };
 }
 
 function buildLadder(S){
@@ -679,8 +674,8 @@ function buildLadder(S){
   });
 
   (S.run.length ? S.run : generateRunRungs(S)).forEach(function(x){
-    add({ phase:'run', days:x.days, lngMin:x.lngMin, othMin:x.othMin,
-          weekMin:Math.round(x.lngMin + x.othMin*(x.days-1)) });
+    add({ phase:'run', days:x.days, sessMin:x.sessMin,
+          weekMin:Math.round(x.sessMin * x.days) });
   });
   return out;
 }
@@ -741,7 +736,7 @@ function pickDays(prefDays, n, longDay){
 }
 
 function rungLongText(r, pace){
-  if(r.phase === 'run') return fmtVol(minsToKm(r.lngMin, pace), 'km');
+  if(r.phase === 'run') return fmtVol(minsToKm(r.sessMin, pace), 'km');
   return r.longText;
 }
 
@@ -749,11 +744,11 @@ function rungLabel(n, pace){
   const r = rungAt(n);
   return 'Rung '+r.rung+' \u00b7 '+rungWeekText(r, pace)+' over '+r.days+' days';
 }
+const MIDDOT = '\u00b7';
 function rungPhase(r){
   return r.phase === 'walk' ? 'walking'
        : r.phase === 'walkrun' ? 'walk/run'
-       : r.weekMin < LADDER_SPEC.runGen.dayBreaks[0] ? 'easy running'
-       : r.weekMin < LADDER_SPEC.runGen.dayBreaks[1] ? 'building' : 'high volume';
+       : r.days <= 3 ? 'easy running' : r.days <= 4 ? 'building' : 'high volume';
 }
 function weeksToClimb(from, to, inclinePerWeek){
   if(inclinePerWeek <= 0) return null;
@@ -768,25 +763,34 @@ function weeksToClimb(from, to, inclinePerWeek){
    running rungs it is the long run. Reading it this way the number climbs
    every time the slider moves right, which the typical session cannot do
    across a change of frequency. */
+/* With every run in a week the same length, a session cannot climb every rung:
+   the week grows 11% but adding a day divides it further, so the session
+   sawtooths. The weekly total does climb every rung, and it is the number
+   Maciek's sheet actually sets, so that is what the sliders read. The session
+   itself is on the line underneath. */
 function rungStartText(r, pace){
-  if(r.phase === 'run')     return Math.round(r.lngMin)+' min running';
-  if(r.phase === 'walkrun') return r.runMin+' min running';
-  return r.walkMin+' min walking';
+  if(r.phase === 'run')     return Math.round(r.weekMin)+' min running';
+  if(r.phase === 'walkrun') return (r.runMin*r.days)+' min running';
+  return r.weekMin+' min walking';
 }
 /* the shape of that session, which is what the patient actually does */
 function rungShapeText(r, pace){
-  if(r.phase === 'run')     return 'about '+fmtVol(minsToKm(r.lngMin, pace), 'km');
-  if(r.phase === 'walkrun') return r.text+', '+r.sessMin+' min out';
-  return 'brisk and continuous';
+  if(r.phase === 'run')
+    return r.days+' runs of '+Math.round(r.sessMin)+' min, about '+fmtVol(minsToKm(r.sessMin, pace), 'km')+' each';
+  if(r.phase === 'walkrun')
+    return r.days+' '+MIDDOT+' '+r.text+', '+r.sessMin+' min out';
+  return r.days+' walks of '+r.walkMin+' min, brisk and continuous';
 }
 function rungSubText(r, n, pace){
-  return 'Rung '+n+' of '+LADDER_TOP+' · '+rungShapeText(r, pace)+
-         ' · '+r.days+' a week · '+rungWeekText(r, pace)+' in total';
+  return 'Rung '+n+' of '+LADDER_TOP+' · '+rungShapeText(r, pace);
 }
 
+/* isLong is kept in the signature because the walking and walk/run phases once
+   used it; every run in a week is now the same length, as it is in the sheet
+   this came from. */
 function rungSession(r, isLong, pace){
   if(r.phase === 'run'){
-    const mins = isLong ? r.lngMin : r.othMin;
+    const mins = r.sessMin;
     const km = Math.round(minsToKm(mins, pace)*10)/10;
     return { kind:'continuous', text:fmtVol(km,'km'), sub:'about '+mins+' min at an easy pace', km:km, mins:mins };
   }
@@ -954,15 +958,16 @@ const PATIENTS = [
    how long the biggest single session is, and which days they train.
    The per-day split is derived from those, not typed in. */
 function distributeGoal(weekTotal, sessionMax, days, longDay){
-  const g = [0,0,0,0,0,0,0];
-  if(!days || !days.length) return g;
-  const ld = (days.indexOf(longDay) >= 0) ? longDay : days[days.length-1];
-  if(days.length === 1){ g[ld] = weekTotal; return g; }
-  const long = Math.max(weekTotal/days.length, Math.min(sessionMax, weekTotal));
-  const each = Math.max(0, weekTotal - long) / (days.length - 1);
-  days.forEach(function(d){ g[d] = (d === ld) ? long : each; });
-  return g;
+  /* Maciek's sheet splits the weekly target evenly across the training days:
+     15 km over Wednesday, Friday and Sunday is 5, 5 and 5, and the relative
+     mileage column is three thirds. There is no long run in a rehab plan. */
+  const out = [0,0,0,0,0,0,0];
+  const d = (days && days.length) ? days : [2,4,6];
+  const each = weekTotal / d.length;
+  d.forEach(function(i){ out[i] = each; });
+  return out;
 }
+
 function syncGoal(p){
   p.goal = distributeGoal(p.goalWeek, p.goalSession, p.days, p.longDay);
   return p.goal;
@@ -981,9 +986,9 @@ PATIENTS.forEach(function(p){
   if(p.goal) return;
   const g = rungAt(p.goalRung), pc = paceOf(p);
   const wk = g.phase === 'run' ? minsToKm(g.weekMin, pc) : minsToKm(rungRunMinutes(g), pc);
-  const lng = g.phase === 'run' ? minsToKm(g.lngMin, pc) : wk/g.days;
+  const lng = g.phase === 'run' ? minsToKm(g.sessMin, pc) : wk/g.days;
   p.goalWeek    = Math.round(wk*10)/10;
-  p.goalSession = Math.round(lng*10)/10;
+  p.goalSession = Math.round((wk/g.days)*10)/10;   /* every session is this */
   p.goal = distributeGoal(p.goalWeek, p.goalSession, p.days, p.longDay);
 });
 
@@ -1004,8 +1009,8 @@ PATIENTS.forEach(function(p){
   if(p.goalWeek === undefined){
     p.days = p.goal.map(function(g,i){ return g > 0 ? i : -1; }).filter(function(i){ return i >= 0; });
     p.goalWeek = sum(p.goal);
-    p.goalSession = Math.max.apply(null, p.goal);
-    p.longDay = p.goal.indexOf(p.goalSession);
+    p.goalSession = p.goalWeek / Math.max(1, p.days.length);
+    p.longDay = p.days[p.days.length-1];
   }
 });
 
@@ -1256,7 +1261,7 @@ function ladderWalk(p, statuses, deload, eases){
 /* what one session on a rung costs, in minutes. This is the weight a session
    carries in its week's score, so the long run counts for more than the others. */
 function rungSessionMinutes(r, isLong){
-  if(r.phase === 'run') return isLong ? r.lngMin : r.othMin;
+  if(r.phase === 'run') return r.sessMin;
   return r.sessMin || r.walkMin || 0;
 }
 
@@ -2256,29 +2261,18 @@ function rampPreview(goalTotal, red, inc, weeks, unit){
       ' Real programmes hold and deload, so this is the fastest case.</div>';
 }
 
-/* week total, longest session, and which days */
+/* the weekly total and which days it is split across. There is no longest
+   session to set: the week divides evenly, as it does in the sheet. */
 function goalFields(p, unit, pre){
-  const minS = minSession(p.goalWeek, p.days);
-  return '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">'+
-      '<label class="field" style="margin:0"><span class="lbl">Goal each week ('+unitLabel(unit)+')</span>'+
-        '<input type="number" min="0" step="0.5" id="'+pre+'-gw" value="'+r1(p.goalWeek)+'"></label>'+
-      '<label class="field" style="margin:0"><span class="lbl">Longest single session</span>'+
-        '<input type="number" min="0" step="0.5" id="'+pre+'-gs" value="'+r1(p.goalSession)+'"></label>'+
-    '</div>'+
+  return '<label class="field"><span class="lbl">Goal each week ('+unitLabel(unit)+')</span>'+
+      '<input type="number" min="0" step="0.5" id="'+pre+'-gw" value="'+r1(p.goalWeek)+'"></label>'+
     '<span class="lbl">Training days</span>'+
     '<div class="daypick" style="margin-bottom:12px">'+ DAYS.map(function(dn, di){
       return '<button data-'+pre+'day="'+di+'" class="'+(p.days.indexOf(di)>=0?'on':'')+'">'+dn+'</button>';
     }).join('') +'</div>'+
-    '<label class="field"><span class="lbl">Longest session falls on</span>'+
-      '<select id="'+pre+'-ld">'+ p.days.map(function(d){
-        return '<option value="'+d+'"'+(d===p.longDay?' selected':'')+'>'+DAYSL[d]+'</option>';
-      }).join('') +'</select></label>'+
     '<div class="note" style="margin-bottom:14px">'+
       (p.days.length
-        ? 'Splits as '+p.days.map(function(d){ return DAYS[d]+' '+fmtVol(p.goal[d], unit); }).join(', ')+'.'+
-          (p.goalSession < minS - 0.01
-            ? ' <b>The longest session cannot be under '+fmtVol(minS, unit)+' across '+p.days.length+' days</b>, so it has been raised.'
-            : '')
+        ? 'Splits evenly as '+p.days.map(function(d){ return DAYS[d]+' '+fmtVol(p.goal[d], unit); }).join(', ')+'.'
         : 'Pick at least one training day.')+
     '</div>';
 }
@@ -2328,10 +2322,10 @@ function ladderControls(p, pre){
     '<span class="lbl">Where they are going</span>'+
     '<div class="slrow" style="margin-bottom:5px">'+
       '<input type="range" class="slider" id="'+pre+'-goal" min="1" max="'+LADDER_TOP+'" step="1" value="'+goal+'">'+
-      '<span class="slval" id="'+pre+'-goal-out">'+rungWeekText(rungAt(goal), pc)+'</span></div>'+
+      '<span class="slval" id="'+pre+'-goal-out">'+rungStartText(rungAt(goal), pc)+'</span></div>'+
     '<div class="slsub" id="'+pre+'-goal-sub">'+
       'Rung '+goal+' of '+LADDER_TOP+' \u00b7 '+rungAt(goal).days+' sessions a week \u00b7 '+
-      rungLongText(rungAt(goal), pc)+' longest session</div>'+
+      rungLongText(rungAt(goal), pc)+' a session</div>'+
 
     '<span class="lbl">Rungs climbed per good week</span>'+
     '<div class="slrow" style="margin-bottom:14px">'+
@@ -2499,9 +2493,9 @@ function bindBuilder(p){
     const st = +rst.value, gl = +rgl.value, ic = (+rin.value)/4;
     $('#bd-start-out').textContent = rungStartText(rungAt(st), paceOf(p));
     $('#bd-start-sub').textContent = rungSubText(rungAt(st), st, paceOf(p));
-    $('#bd-goal-out').textContent = rungWeekText(rungAt(gl), paceOf(p));
+    $('#bd-goal-out').textContent = rungStartText(rungAt(gl), paceOf(p));
     $('#bd-goal-sub').textContent = 'Rung '+gl+' of '+LADDER_TOP+' \u00b7 '+rungAt(gl).days+
-          ' sessions a week \u00b7 '+rungLongText(rungAt(gl), paceOf(p))+' longest session';
+          ' sessions a week \u00b7 '+rungLongText(rungAt(gl), paceOf(p))+' a session';
     $('#bd-inc-out').textContent = ic.toFixed(2).replace(/0$/,'');
     $('#bd-verdict').innerHTML = ladderVerdict(st, gl, ic, null);
   };
@@ -2549,7 +2543,7 @@ function sessionModal(p, key){
                 ? p.sessionOverrides[key] : day.km;
   const short = function(n){
     const r = rungAt(n);
-    if(r.phase === 'run') return fmtVol(minsToKm(isLong ? r.lngMin : r.othMin, pace), 'km');
+    if(r.phase === 'run') return fmtVol(minsToKm(r.sessMin, pace), 'km');
     if(r.phase === 'walkrun') return r.runMin+' min running';
     return r.walkMin+' min walk';
   };
@@ -2706,14 +2700,10 @@ function newProgramme(){
             const on = Math.abs(N.goalWeek-x.w) < 0.01 && Math.abs(N.goalSession-x.s) < 0.01;
             return '<button class="btn btn-sm'+(on?' btn-p':'')+'" data-preset="'+k+'">'+x.n+'</button>';
           }).join('') +'</div>' : '')+
-        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">'+
-          '<label class="field" style="margin:0"><span class="lbl">Goal each week ('+unitLabel(unit)+')</span>'+
-            '<input type="number" min="0" step="0.5" id="np-gw" value="'+r1(N.goalWeek)+'"></label>'+
-          '<label class="field" style="margin:0"><span class="lbl">Longest single session</span>'+
-            '<input type="number" min="0" step="0.5" id="np-gs" value="'+r1(N.goalSession)+'"></label>'+
-        '</div>'+
+        '<label class="field"><span class="lbl">Goal each week ('+unitLabel(unit)+')</span>'+
+          '<input type="number" min="0" step="0.5" id="np-gw" value="'+r1(N.goalWeek)+'"></label>'+
         '<div class="note">'+(N.goalWeek>0
-          ? 'A '+fmtVol(N.goalWeek, unit)+' week with a '+fmtVol(N.goalSession, unit)+' longest session.'
+          ? 'A '+fmtVol(N.goalWeek, unit)+' week, '+fmtVol(N.goalSession, unit)+' a session across '+N.days.length+' days.'
           : 'Pick a typical goal or type your own.')+'</div>'+
       '</div></div></div><div>'+
 
@@ -2723,11 +2713,7 @@ function newProgramme(){
           return '<button data-npday="'+di+'" class="'+(N.days.indexOf(di)>=0?'on':'')+'">'+dn+'</button>';
         }).join('') +'</div>'+
         (N.days.length
-          ? '<label class="field"><span class="lbl">Longest session falls on</span>'+
-              '<select id="np-ld">'+ N.days.map(function(d){
-                return '<option value="'+d+'"'+(d===N.longDay?' selected':'')+'>'+DAYSL[d]+'</option>';
-              }).join('') +'</select></label>'+
-            '<div class="note">'+N.days.length+' sessions a week, splitting as '+
+          ? '<div class="note">'+N.days.length+' sessions a week, splitting evenly as '+
               N.days.map(function(d){ return DAYS[d]+' '+fmtVol(N.goal[d], unit); }).join(', ')+'.</div>'
           : '<div class="note">Pick at least one training day.</div>')+
       '</div></div>'+
@@ -2840,9 +2826,9 @@ function newProgramme(){
       const st = +nst.value, gl = +ngl.value, ic = (+nin.value)/4;
       $('#np-start-out').textContent = rungStartText(rungAt(st), pc);
       $('#np-start-sub').textContent = rungSubText(rungAt(st), st, pc);
-      $('#np-goal-out').textContent = rungWeekText(rungAt(gl), pc);
+      $('#np-goal-out').textContent = rungStartText(rungAt(gl), pc);
       $('#np-goal-sub').textContent = 'Rung '+gl+' of '+LADDER_TOP+' \u00b7 '+rungAt(gl).days+
-          ' sessions a week \u00b7 '+rungLongText(rungAt(gl), pc)+' longest session';
+          ' sessions a week \u00b7 '+rungLongText(rungAt(gl), pc)+' a session';
       $('#np-inc-out').textContent = ic.toFixed(2).replace(/0$/,'');
       $('#np-verdict').innerHTML = ladderVerdict(st, gl, ic, null);
     };
@@ -3595,12 +3581,10 @@ function adLadder(){
   }).join('');
 
   const runRows = S.run.map(function(x, k){
-    const wk = x.lngMin + x.othMin*(x.days-1);
-    return row('<td><div>Long run '+num(x.lngMin,'run.'+k+'.lngMin')+' min</div>'+
-                 (x.days > 1 ? '<div style="margin-top:4px">then '+(x.days-1)+' runs of '+
-                    num(x.othMin,'run.'+k+'.othMin')+' min</div>' : '')+
-                 '<div class="sd">the long run is about '+fmtVol(minsToKm(x.lngMin, pc),'km')+' at a 6:30 pace</div></td>'+
-               '<td class="mono"><b>'+mins(x.lngMin)+'</b></td>'+
+    const wk = x.sessMin * x.days;
+    return row('<td><div>Run '+num(x.sessMin,'run.'+k+'.sessMin')+' min</div>'+
+                 '<div class="sd">every run the same, about '+fmtVol(minsToKm(x.sessMin, pc),'km')+' at a 6:30 pace</div></td>'+
+               '<td class="mono"><b>'+mins(x.sessMin)+'</b></td>'+
                '<td>'+num(x.days,'run.'+k+'.days')+' a week</td>'+
                '<td class="mono">'+mins(wk)+'</td>'+
                '<td class="mono"><b>'+mins(wk)+'</b></td>',
@@ -3647,21 +3631,15 @@ function adLadder(){
           '<div class="setrow"><div style="flex:1"><div class="st">Each rung is bigger by</div>'+
             '<div class="sd">0.11 is the 10 to 11% a week the evidence supports</div></div>'+num(G.growth,'runGen.growth',0.01,70)+'</div>'+
         '</div><div>'+
-          '<div class="setrow"><div style="flex:1"><div class="st">Longest run never passes</div>'+
-            '<div class="sd">Minutes</div></div>'+num(G.longCapMin,'runGen.longCapMin',1,70)+'</div>'+
-          '<div class="setrow"><div style="flex:1"><div class="st">Longest run grows into its share over</div>'+
-            '<div class="sd">Rungs. Keeps the first continuous week level with the last walk/run week</div></div>'+
-            num(G.longRampRungs,'runGen.longRampRungs',1,70)+'</div>'+
-          '<div class="setrow"><div style="flex:1"><div class="st">Add a 4th, 5th and 6th session at</div>'+
-            '<div class="sd">Minutes of running a week</div></div>'+
-            '<div style="display:flex;gap:6px">'+num(G.dayBreaks[0],'runGen.dayBreaks.0',1,54)+
-              num(G.dayBreaks[1],'runGen.dayBreaks.1',1,54)+num(G.dayBreaks[2],'runGen.dayBreaks.2',1,54)+'</div></div>'+
+          '<div class="setrow"><div style="flex:1"><div class="st">A run never goes past</div>'+
+            '<div class="sd">Minutes. Past this the week adds a session rather than lengthening the runs</div></div>'+
+            num(G.maxSessionMin,'runGen.maxSessionMin',1,70)+'</div>'+
+          '<div class="setrow"><div style="flex:1"><div class="st">Never more than</div>'+
+            '<div class="sd">Sessions a week</div></div>'+num(G.maxDays,'runGen.maxDays',1,70)+'</div>'+
         '</div></div>'+
-      '<span class="lbl" style="margin-top:14px">Share of the week the longest run takes</span>'+
-      '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px">'+
-        [3,4,5,6].map(function(d){ return '<div style="display:flex;align-items:center;gap:6px">'+
-          '<span class="sd">'+d+' a week</span>'+num(G.longShare[d],'runGen.longShare.'+d,0.01,58)+'</div>'; }).join('')+
-      '</div>'+
+      '<div class="note" style="margin:14px 0">Every run in a week is the same length, as it is in the spreadsheet '+
+      'this came from. A session is only added once the week has grown enough to carry it without the runs '+
+      'getting shorter, so climbing a rung never asks for less.</div>'+
       '<button class="btn btn-p" id="lad-regen">Rewrite the running rungs</button>'+
       '</div></div>';
 
@@ -3684,8 +3662,7 @@ function adLadder(){
       const g = el.dataset.ladadd, arr = LADDER_SPEC[g], last = arr[arr.length-1];
       if(g === 'walk')         arr.push({days:last?last.days:3, min:(last?last.min:15)+5});
       else if(g === 'walkrun') arr.push({run:(last?last.run:1)+1, walk:last?last.walk:2, reps:last?last.reps:5});
-      else                     arr.push({days:last?last.days:3, lngMin:Math.round((last?last.lngMin:30)*1.11),
-                                         othMin:Math.round((last?last.othMin:30)*1.11)});
+      else                     arr.push({days:last?last.days:3, sessMin:Math.round((last?last.sessMin:30)*1.11)});
       rebuildLadder(); toast('Rung added'); render();
     };
   });
