@@ -338,6 +338,8 @@ tbody tr.click:hover{background:var(--surface-2)}
   .dayrow{gap:5px}
   .bar-wrap{overflow-x:auto;overflow-y:hidden}
   .bar{min-width:21px}
+  /* the same note wraps to more lines in a narrow modal, so it needs more floor */
+  .slverdict{min-height:84px}
   .goalline{width:max(100%, calc(var(--n) * 27px))}
   .bar .amt{font-size:9px}
   [data-goal]{min-width:0;font-size:15px;padding:9px 1px}
@@ -1203,6 +1205,8 @@ function ladderWalk(p, statuses, deload, eases){
   const held = inc <= 0 ? Math.max(floorW, p.weeks || 12) : 0;   // a plan set to hold
   const out = []; let pos = start;
   for(let w = 1; w <= LADDER_MAX_WEEKS; w++){
+    /* a clinician can pin a week to a rung; the climb carries on from there */
+    if(p.overrides && p.overrides[w] && p.overrides[w].rung) pos = p.overrides[w].rung;
     const rung = Math.max(1, Math.min(top, Math.round(pos)));
     out.push(rung);
     if(held ? w >= held : (rung >= top && w >= floorW)) break;
@@ -1332,7 +1336,7 @@ function computeProgram(p, cfg){
       vol = (R.phase === 'run') ? minsToKm(R.weekMin, pace) : R.weekMin;
       ladderDays = pickDays(p.days || [2,4,6], R.days, p.longDay);
     }
-    if(p.overrides && p.overrides[w]) vol = p.overrides[w].vol;   // clinician override wins
+    if(p.overrides && p.overrides[w] && p.overrides[w].vol !== undefined) vol = p.overrides[w].vol;
     if(!useLadder && cfg.capAtGoal) vol = Math.min(vol, goalTotal);
     const start = new Date(wk0); start.setDate(start.getDate()+(w-1)*7);
     const volOn = volStream ? itemActive(volStream, w, nWeeks) : true;
@@ -1342,21 +1346,22 @@ function computeProgram(p, cfg){
     let liveRung = useLadder ? rungs[w-1] : null, easedBy = 0, stopped = false;
     const days  = [0,1,2,3,4,5,6].map(function(i){
       let amount = 0, rx = null, wasEased = easedBy, wasStopped = stopped;
+      const ov = p.sessionOverrides && p.sessionOverrides[w+'-'+i];
+      /* On the ladder a session is changed by moving it to another rung. A bare
+         number cannot work here: the same figure means kilometres on the
+         running rungs and minutes on the walking and walk/run rungs, which is
+         how a 24 minute walk/run came to be written as 24 km. */
+      const ovRung = (ov && typeof ov === 'object') ? ov.rung : null;
       if(useLadder){
         if(ladderDays.indexOf(i) >= 0 && volOn && !stopped){
           const isLong = (i === ladderDays[ladderDays.length-1]);
-          rx = rungSession(rungAt(liveRung), isLong, pace);
-          amount = (rungAt(liveRung).phase === 'run') ? rx.km
-                 : (rungAt(liveRung).sessMin || rungAt(liveRung).walkMin);
+          const RS = rungAt(ovRung || liveRung);
+          rx = rungSession(RS, isLong, pace);
+          amount = (RS.phase === 'run') ? rx.km : (RS.sessMin || RS.walkMin);
         }
       } else {
         amount = volOn ? vol*rel[i] : 0;
-      }
-      const ov = p.sessionOverrides && p.sessionOverrides[w+'-'+i];
-      if(ov !== undefined && ov !== null){
-        amount = ov;
-        if(useLadder && R && R.phase === 'run') rx = {kind:'continuous', text:fmtVol(amount,'km'),
-                                                     sub:'about '+Math.round(amount*pace)+' min at an easy pace'};
+        if(typeof ov === 'number'){ amount = ov; }
       }
       const key = w+'-'+i, log = p.logs[key] || null;
       const dt = new Date(start); dt.setDate(dt.getDate()+i); dt.setHours(0,0,0,0);
@@ -1365,7 +1370,7 @@ function computeProgram(p, cfg){
       const mins = (rx && rx.kind === 'continuous') ? amount*pace
                  : (useLadder ? amount : amount*pace);
       const load = mins + (hasExtra ? (A.sessionLoad || 3) : 0);
-      const builtRung = liveRung;          // the rung this day was written from
+      const builtRung = ovRung || liveRung;   // the rung this day was written from
       const sg = useLadder ? sessionGrade(log, A) : null;
       if(useLadder && log){
         if(sg === 'flag') stopped = true;
@@ -2505,37 +2510,69 @@ function sessionModal(p, key){
   const parts = key.split('-'), w = +parts[0], di = +parts[1];
   const prog = computeProgram(p, CFG);
   const day = prog.weeks[w-1].days[di];
-  const cur = (p.sessionOverrides && p.sessionOverrides[key] !== undefined) ? p.sessionOverrides[key] : day.km;
-  const rx = sessionPrescription(cur, prog.unit, prog.pace, prog.continuousAt);
+  const ladder = day.rung != null;
+  const pace = paceOf(p);
+  const wkRung = prog.weeks[w-1].rung;
+  const dayList = ladder ? pickDays(p.days || [2,4,6], rungAt(wkRung).days, p.longDay) : [];
+  const isLong = ladder && di === dayList[dayList.length-1];
+  const curRung = day.rung || wkRung || 1;
+  const cur = (!ladder && p.sessionOverrides && typeof p.sessionOverrides[key] === 'number')
+                ? p.sessionOverrides[key] : day.km;
+  const short = function(n){
+    const r = rungAt(n);
+    if(r.phase === 'run') return fmtVol(minsToKm(isLong ? r.lngMin : r.othMin, pace), 'km');
+    if(r.phase === 'walkrun') return r.runMin+' min running';
+    return r.walkMin+' min walk';
+  };
+  const say = function(n){
+    const s2 = rungSession(rungAt(n), isLong, pace);
+    return 'Written as <b>'+s2.text+'</b>'+(s2.sub ? ' — '+s2.sub : '')+
+           '<br><span style="color:var(--muted)">Rung '+n+' of '+LADDER_TOP+', '+rungPhase(rungAt(n))+'</span>';
+  };
+  const rx = ladder ? null : sessionPrescription(cur, prog.unit, prog.pace, prog.continuousAt);
   $('#modal').innerHTML =
     '<div class="modal-h"><div style="flex:1"><div style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:650">'+
-      'Week '+w+' \u00b7 '+DAYSL[di]+'</div><h3 style="font-size:16px;margin-top:2px">Change this session</h3></div></div>'+
+      'Week '+w+' · '+DAYSL[di]+'</div><h3 style="font-size:16px;margin-top:2px">Change this session</h3></div></div>'+
     '<div class="modal-b">'+
-      '<div class="note" style="margin-bottom:14px">The plan calls for <b>'+fmtVol(day.km, prog.unit)+'</b>. '+
+      '<div class="note" style="margin-bottom:14px">The plan calls for <b>'+
+      (ladder ? rungSession(rungAt(curRung), isLong, pace).text : fmtVol(day.km, prog.unit))+'</b>. '+
       'Changing it here affects this session only; the rest of the plan is untouched.</div>'+
-      '<label class="field"><span class="lbl">Session ('+unitLabel(prog.unit)+')</span>'+
-        '<input type="number" min="0" step="0.1" id="ss-val" value="'+r1(cur)+'"></label>'+
-      '<div class="note" id="ss-rx">'+(rx ? 'Written as <b>'+rx.text+'</b>'+(rx.sub?' \u2014 '+rx.sub:'') : 'Rest day')+'</div>'+
+      (ladder
+        ? '<span class="lbl">Move this session to another rung</span>'+
+          '<div class="slrow" style="margin-bottom:5px">'+
+            '<input type="range" class="slider" id="ss-rung" min="1" max="'+LADDER_TOP+'" step="1" value="'+curRung+'">'+
+            '<span class="slval" id="ss-out">'+short(curRung)+'</span></div>'+
+          '<div class="note slverdict" id="ss-rx">'+say(curRung)+'</div>'
+        : '<label class="field"><span class="lbl">Session ('+unitLabel(prog.unit)+')</span>'+
+            '<input type="number" min="0" step="0.1" id="ss-val" value="'+r1(cur)+'"></label>'+
+          '<div class="note" id="ss-rx">'+(rx ? 'Written as <b>'+rx.text+'</b>'+(rx.sub?' — '+rx.sub:'') : 'Rest day')+'</div>')+
     '</div>'+
     '<div class="modal-f">'+
       ((p.sessionOverrides && p.sessionOverrides[key] !== undefined)
         ? '<button class="btn" id="ss-clear" style="flex:0 0 auto">Reset to plan</button>' : '')+
       '<button class="btn" onclick="closeModal()" style="flex:0 0 auto">Cancel</button>'+
       '<button class="btn btn-p" id="ss-save" style="flex:1;justify-content:center">Save session</button></div>';
-  const val = $('#ss-val');
-  val.oninput = function(){
-    const r2 = sessionPrescription(+val.value, prog.unit, prog.pace, prog.continuousAt);
-    $('#ss-rx').innerHTML = r2 ? 'Written as <b>'+r2.text+'</b>'+(r2.sub?' \u2014 '+r2.sub:'') : 'Rest day';
-  };
+  const val = $('#ss-val'), rsl = $('#ss-rung');
+  if(rsl){
+    rsl.oninput = function(){
+      $('#ss-out').textContent = short(+rsl.value);
+      $('#ss-rx').innerHTML = say(+rsl.value);
+    };
+  } else if(val){
+    val.oninput = function(){
+      const r2 = sessionPrescription(+val.value, prog.unit, prog.pace, prog.continuousAt);
+      $('#ss-rx').innerHTML = r2 ? 'Written as <b>'+r2.text+'</b>'+(r2.sub?' — '+r2.sub:'') : 'Rest day';
+    };
+  }
   $('#ss-save').onclick = function(){
     p.sessionOverrides = p.sessionOverrides || {};
-    p.sessionOverrides[key] = Math.max(0, +val.value||0);
-    closeModal(); toast('Session changed \u2014 audit logged'); render();
+    p.sessionOverrides[key] = rsl ? {rung: +rsl.value} : Math.max(0, +val.value||0);
+    closeModal(); toast('Session changed — audit logged'); render();
   };
   const clr = $('#ss-clear');
   if(clr) clr.onclick = function(){ delete p.sessionOverrides[key]; closeModal(); toast('Back to the plan'); render(); };
   $('#scrim').classList.add('on');
-  val.focus();
+  if(val) val.focus();
 }
 
 function overrideModal(p, w){
@@ -2544,8 +2581,16 @@ function overrideModal(p, w){
     '<div class="modal-h"><div style="flex:1"><div style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:650">Week '+w+'</div>'+
       '<h3 style="font-size:16px;margin-top:2px">Override the algorithm</h3></div></div>'+
     '<div class="modal-b">'+
-      '<div class="note" style="margin-bottom:14px">RAMP prescribed <b>'+fmtVol(wk.vol, prog.unit)+'</b>. '+(wk.why||'')+'</div>'+
-      '<label class="field"><span class="lbl">Set weekly volume ('+unitLabel(prog.unit)+')</span><input type="number" step="0.5" value="'+r1(wk.vol)+'" id="ovVal"></label>'+
+      '<div class="note" style="margin-bottom:14px">RAMP prescribed <b>'+
+        (wk.volText || fmtVol(wk.vol, prog.unit))+'</b>. '+(wk.why||'')+'</div>'+
+      (wk.rung != null
+        ? '<span class="lbl">Put this week on another rung</span>'+
+          '<div class="slrow" style="margin-bottom:5px">'+
+            '<input type="range" class="slider" id="ovRung" min="1" max="'+LADDER_TOP+'" step="1" value="'+wk.rung+'">'+
+            '<span class="slval" id="ovOut">'+rungStartText(rungAt(wk.rung), paceOf(p))+'</span></div>'+
+          '<div class="slsub" id="ovSub">'+rungSubText(rungAt(wk.rung), wk.rung, paceOf(p))+'</div>'
+        : '<label class="field"><span class="lbl">Set weekly volume ('+unitLabel(prog.unit)+')</span>'+
+          '<input type="number" step="0.5" value="'+r1(wk.vol)+'" id="ovVal"></label>')+
       '<label class="field"><span class="lbl">Clinical reason (required — stored in the audit log)</span>'+
         '<select id="ovWhy"><option>Patient reported an unrelated illness</option><option>Race or event in the calendar</option>'+
         '<option>Objective testing supports a faster ramp</option><option>Symptoms worse than the score suggests</option>'+
@@ -2554,9 +2599,16 @@ function overrideModal(p, w){
       'Subsequent weeks continue to be calculated from the overridden value.</div></div>'+
     '<div class="modal-f"><button class="btn" onclick="closeModal()">Cancel</button>'+
       '<button class="btn btn-p" id="ovSave" style="flex:1;justify-content:center">Apply override</button></div>';
+  const orl = $('#ovRung');
+  if(orl) orl.oninput = function(){
+    $('#ovOut').textContent = rungStartText(rungAt(+orl.value), paceOf(p));
+    $('#ovSub').textContent = rungSubText(rungAt(+orl.value), +orl.value, paceOf(p));
+  };
   $('#ovSave').onclick = function(){
     p.overrides = p.overrides || {};
-    p.overrides[w] = { vol: +$('#ovVal').value, why: $('#ovWhy').value, by:'M. Krolikowski #8857' };
+    p.overrides[w] = orl
+      ? { rung: +orl.value, why: $('#ovWhy').value, by:'M. Krolikowski #8857' }
+      : { vol: +$('#ovVal').value, why: $('#ovWhy').value, by:'M. Krolikowski #8857' };
     closeModal(); toast('Week '+w+' overridden — logged to audit trail'); render();
   };
   $('#scrim').classList.add('on');
