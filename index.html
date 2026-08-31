@@ -601,8 +601,14 @@ const LADDER_SPEC = {
              {run:4, walk:2, reps:5},  {run:5, walk:2, reps:5},
              {run:10, walk:2, reps:3} ],
 
-  /* continuous running, generated rather than listed, in minutes a week */
-  run: {
+  /* Continuous running rungs are rows too, so all three phases are edited the
+     same way. They are seeded by the generator below rather than typed out,
+     because nineteen rows of geometric growth is not something to maintain by
+     hand, but once seeded any row can be changed. */
+  run: [],
+
+  /* the generator that fills them */
+  runGen: {
     startMin:     90,    /* joins the walk/run rungs where they leave off */
     topMin:       600,
     growth:       0.11,  /* per rung */
@@ -615,9 +621,42 @@ const LADDER_SPEC = {
 
 /* how many sessions a week a given weekly running load is spread over */
 function rungDaysFor(m, S){
-  const b = S.run.dayBreaks;
+  const b = S.runGen.dayBreaks;
   for(let k = 0; k < b.length; k++) if(m < b[k]) return 3 + k;
   return 3 + b.length;
+}
+
+/* Fill the running rungs from the generator. Two rules keep the climb honest.
+   The long run ramps in over the first few rungs instead of taking its full
+   share immediately, so the first continuous week joins the walk/run rungs
+   exactly where they left off; and the long run never shrinks, because adding
+   a training day at the same weekly total always makes the other sessions
+   smaller, and a rung that makes the biggest ask smaller is not a step up. */
+function generateRunRungs(S){
+  const G = S.runGen, rows = [];
+  const lastWR = S.walkrun[S.walkrun.length-1];
+  let m = G.startMin, idx = 0;
+  let prevLng = lastWR ? lastWR.run*lastWR.reps : G.startMin/3;
+  while(m <= G.topMin && rows.length < 120){
+    const d = rungDaysFor(m, S), flat = 1/d;
+    const share = flat + ((G.longShare[d] || flat) - flat) * Math.min(1, idx/(G.longRampRungs || 1));
+    const lng = Math.max(prevLng, Math.min(G.longCapMin, share*m));
+    rows.push({ days:d, lngMin:Math.round(lng),
+                othMin:Math.round(d > 1 ? Math.max(0, (m-lng)/(d-1)) : 0) });
+    prevLng = lng; idx++; m *= (1 + (G.growth || 0.11));
+  }
+  return rows;
+}
+
+/* what a rung actually asks of the patient, with nothing hidden by the unit.
+   A walk/run session is mostly walking, and the ladder should say so. */
+function rungParts(r){
+  if(r.phase === 'walk')
+    return { sessMin:r.walkMin, sessRun:0, weekMin:r.weekMin, weekRun:0 };
+  if(r.phase === 'walkrun')
+    return { sessMin:r.sessMin, sessRun:r.runMin,
+             weekMin:r.sessMin*r.days, weekRun:r.runMin*r.days };
+  return { sessMin:r.lngMin, sessRun:r.lngMin, weekMin:r.weekMin, weekRun:r.weekMin };
 }
 
 function buildLadder(S){
@@ -639,28 +678,14 @@ function buildLadder(S){
           sub:rm+' min of running in '+tot+' min' });
   });
 
-  /* Two rules keep the climb honest. The long run ramps in over the first few
-     rungs instead of taking its full share immediately, so the first continuous
-     week joins the walk/run rungs exactly where they left off; and the long run
-     never shrinks, because adding a training day at the same weekly total always
-     makes the other sessions smaller, and a rung that makes the biggest ask
-     smaller is not a step up. The other sessions absorb it. */
-  const R = S.run;
-  const lastWR = out.filter(function(x){ return x.phase === 'walkrun'; }).pop();
-  let m = R.startMin, idx = 0;
-  let prevLng = lastWR ? lastWR.runMin : R.startMin / 3;
-  while(m <= R.topMin && out.length < 200){
-    const d = rungDaysFor(m, S), flat = 1/d;
-    const share = flat + ((R.longShare[d] || flat) - flat) * Math.min(1, idx/(R.longRampRungs || 1));
-    const lng = Math.max(prevLng, Math.min(R.longCapMin, share*m));
-    add({ phase:'run', days:d,
-          weekMin:Math.round(m), lngMin:Math.round(lng),
-          othMin:Math.round(d > 1 ? Math.max(0, (m-lng)/(d-1)) : 0) });
-    prevLng = lng; idx++; m *= (1 + (R.growth || 0.11));
-  }
+  (S.run.length ? S.run : generateRunRungs(S)).forEach(function(x){
+    add({ phase:'run', days:x.days, lngMin:x.lngMin, othMin:x.othMin,
+          weekMin:Math.round(x.lngMin + x.othMin*(x.days-1)) });
+  });
   return out;
 }
 
+LADDER_SPEC.run = generateRunRungs(LADDER_SPEC);   // seed the rows once
 let RUNLADDER = buildLadder(LADDER_SPEC);
 let LADDER_TOP = RUNLADDER.length;
 function rebuildLadder(){ RUNLADDER = buildLadder(LADDER_SPEC); LADDER_TOP = RUNLADDER.length; }
@@ -727,8 +752,8 @@ function rungLabel(n, pace){
 function rungPhase(r){
   return r.phase === 'walk' ? 'walking'
        : r.phase === 'walkrun' ? 'walk/run'
-       : r.weekMin < LADDER_SPEC.run.dayBreaks[0] ? 'easy running'
-       : r.weekMin < LADDER_SPEC.run.dayBreaks[1] ? 'building' : 'high volume';
+       : r.weekMin < LADDER_SPEC.runGen.dayBreaks[0] ? 'easy running'
+       : r.weekMin < LADDER_SPEC.runGen.dayBreaks[1] ? 'building' : 'high volume';
 }
 function weeksToClimb(from, to, inclinePerWeek){
   if(inclinePerWeek <= 0) return null;
@@ -751,7 +776,7 @@ function rungStartText(r, pace){
 /* the shape of that session, which is what the patient actually does */
 function rungShapeText(r, pace){
   if(r.phase === 'run')     return 'about '+fmtVol(minsToKm(r.lngMin, pace), 'km');
-  if(r.phase === 'walkrun') return r.text;
+  if(r.phase === 'walkrun') return r.text+', '+r.sessMin+' min out';
   return 'brisk and continuous';
 }
 function rungSubText(r, n, pace){
@@ -810,47 +835,18 @@ function nominalGoal(unit){
      2. what we ask them afterwards     -> the shared three questions, plus completion
      3. how their answers change it     -> algo (owned here, not clinic-wide)
    Clinic-wide safety rules live in CFG and cannot be overridden by a protocol. */
-const PROTOCOLS = [
-  {id:'tendo', name:'Mid-portion Achilles tendinopathy', region:'Achilles / calf',
-   red:0.35, inc:0.10, weeks:12,
-   note:'Load-tolerant tissue. The next morning matters more than pain during the run.',
-   algo:{ okDuring:3, okAfter:2, holdDuring:5, holdAfter:4, wDuring:0.30, wAfter:0.50, painStep:0.025,
-          deload:0.10, dwell:2, sessionLoad:4, flagPainDuring:7, flagPainAfter:5 },
-   streams:[
-     {key:'run',  type:'volume', name:'Running', unit:'km', pace:6.5},
-   ]},
-
-  {id:'bone', name:'Bone stress injury \u2014 cautious', region:'Tibia / metatarsal',
-   red:0.50, inc:0.10, weeks:16,
-   note:'Any pain during running is a stop rule. Scored strictly and deloaded hard.',
-   algo:{ okDuring:1, okAfter:1, holdDuring:3, holdAfter:2,
-          wDuring:0.55, wAfter:0.25, painStep:0.04,
-          deload:0.15, dwell:3, flagPainDuring:4, flagPainAfter:3 },
-   streams:[ {key:'run', type:'volume', name:'Running', unit:'km', pace:6.5} ]},
-
-  {id:'std', name:'General return to run', region:'Any lower limb',
-   red:0.30, inc:0.15, weeks:8,
-   note:'Balanced default for a runner with no red flags and a clear goal distance.',
-   algo:{ okDuring:2, okAfter:2, holdDuring:5, holdAfter:4, wDuring:0.40, wAfter:0.40, painStep:0.025,
-          deload:0.10, dwell:2, flagPainDuring:7, flagPainAfter:5 },
-   streams:[ {key:'run', type:'volume', name:'Running', unit:'km', pace:6.5} ]},
-
-  {id:'pht', name:'Proximal hamstring tendinopathy', region:'Ischial / posterior thigh',
-   red:0.35, inc:0.10, weeks:16,
-   note:'Compression in hip flexion is the aggravator, so uphill and speed work come last. Slow to settle, and graded on the next morning.',
-   algo:{ okDuring:3, okAfter:2, holdDuring:5, holdAfter:4, wDuring:0.30, wAfter:0.50, painStep:0.03,
-          deload:0.10, dwell:3, flagPainDuring:6, flagPainAfter:5 },
-   streams:[ {key:'run', type:'volume', name:'Running', unit:'km', pace:6.5} ]},
-
-  {id:'acl', name:'Post-ACLR return to sport', region:'Knee',
-   red:0.35, inc:0.15, weeks:10,
-   note:'Hop-test clearance before week 1. The running load climbs only on clean weeks.',
-   algo:{ okDuring:2, okAfter:1, holdDuring:4, holdAfter:3, wDuring:0.35, wAfter:0.35, painStep:0.03,
-          deload:0.10, dwell:2, sessionLoad:5, flagPainDuring:6, flagPainAfter:4 },
-   streams:[
-     {key:'run',   type:'volume', name:'Running', unit:'km', pace:6.5}
-   ]}
-];
+/* A protocol is a presentation applied to running. There is one per
+   presentation and they are built from the list above rather than written out
+   again, because two catalogues of the same numbers drift: the hand-authored
+   proximal hamstring protocol had already come apart from the proximal
+   hamstring injury it was named after. They share the same algo object, so
+   editing either edits both. */
+const PROTOCOLS = INJURIES.map(function(inj){
+  return { id: inj.key, name: inj.name, region: inj.region, note: inj.note,
+           weeks: inj.weeks, maxInc: inj.maxInc, defRed: inj.defRed,
+           algo: inj.algo,
+           streams: [ {key:'run', type:'volume', name:'Running', unit:'km', pace:6.5} ] };
+});
 
 /* ---------- the caseload ---------- */
 /* Six demonstration programmes, chosen to span the range rather than to look
@@ -867,7 +863,7 @@ const PATIENTS = [
 
   /* continuous running, mid climb, one sore week already absorbed */
   { id:'p1', name:'Sarah Nguyen', age:34, injury:'Mid-portion Achilles tendinopathy',
-    red:0.30, inc:0.15, protocol:'tendo', cur:7, since:'8 Jun 2026', colour:'#0a0a0a',
+    red:0.30, inc:0.15, protocol:'achilles', cur:7, since:'8 Jun 2026', colour:'#0a0a0a',
     days:[2,4,6], longDay:6, startRung:16, goalRung:24, incline:1,
     paceFast:5.25, paceSlow:6.25, sessionOverrides:{},
     logs:{ '1-2':{pd:2,pa:1,b:'yes'}, '1-4':{pd:1,pa:1,b:'yes'}, '1-6':{pd:2,pa:0,b:'yes'},
@@ -883,7 +879,7 @@ const PATIENTS = [
   /* stalled on walk/run: three sore weeks have pushed the finish six weeks out,
      and this week's first session crossed the flag threshold */
   { id:'p2', name:'Dave Whitfield', age:41, injury:'Patellofemoral pain \u2014 right',
-    red:0.40, inc:0.10, protocol:'std', cur:9, since:'22 Jun 2026', colour:'#3f3f46',
+    red:0.40, inc:0.10, protocol:'pfps', cur:9, since:'22 Jun 2026', colour:'#3f3f46',
     days:[1,3,5], longDay:5, startRung:9, goalRung:21, incline:1,
     paceFast:6.0, paceSlow:7.25, sessionOverrides:{},
     logs:{ '1-1':{pd:2,pa:1,b:'yes'}, '1-3':{pd:2,pa:2,b:'yes'}, '1-5':{pd:1,pa:2,b:'yes'},
@@ -915,7 +911,7 @@ const PATIENTS = [
   /* the clean case: every week green, no setbacks, and close enough to the top
      to show what a programme looks like as it finishes */
   { id:'p4', name:'Marc Boucher', age:29, injury:'Post-ACLR (14 months) return to run',
-    red:0.35, inc:0.15, protocol:'acl', cur:9, since:'15 Jun 2026', colour:'#52525b',
+    red:0.35, inc:0.15, protocol:'aclr', cur:9, since:'15 Jun 2026', colour:'#52525b',
     days:[1,3,5,6], longDay:6, startRung:11, goalRung:21, incline:1,
     paceFast:5.75, paceSlow:6.75, sessionOverrides:{},
     logs:{ '1-1':{pd:1,pa:0,b:'yes'}, '1-3':{pd:0,pa:1,b:'yes'}, '1-5':{pd:1,pa:0,b:'yes'}, '1-6':{pd:1,pa:1,b:'yes'},
@@ -931,14 +927,14 @@ const PATIENTS = [
   /* the very bottom: fifteen minutes of pain free walking, day one, nothing
      logged yet, and the whole climb to easy running still ahead */
   { id:'p5', name:'Kelly Osei', age:38, injury:'Plantar fasciopathy \u2014 left',
-    red:0.80, inc:0.10, protocol:'std', cur:1, since:'17 Aug 2026', colour:'#71717a',
+    red:0.80, inc:0.10, protocol:'plantar', cur:1, since:'17 Aug 2026', colour:'#71717a',
     days:[2,4,6], longDay:6, startRung:1, goalRung:20, incline:1,
     paceFast:7.0, paceSlow:8.25, sessionOverrides:{}, logs:{} },
 
   /* the cautious dial: half a rung per good week, so the same climb takes twice
      as long. Still on the walking rungs, and deliberately so */
   { id:'p6', name:'Tom Ferreira', age:52, injury:'Proximal hamstring tendinopathy',
-    red:0.30, inc:0.15, protocol:'pht', cur:7, since:'13 Jul 2026', colour:'#27272a',
+    red:0.30, inc:0.15, protocol:'hamstring', cur:7, since:'13 Jul 2026', colour:'#27272a',
     days:[2,5,6], longDay:6, startRung:3, goalRung:15, incline:0.5,
     paceFast:6.75, paceSlow:8.0, sessionOverrides:{},
     logs:{ '1-2':{pd:2,pa:2,b:'yes'}, '1-5':{pd:2,pa:1,b:'yes'}, '1-6':{pd:3,pa:2,b:'yes'},
@@ -2649,19 +2645,8 @@ function overrideModal(p, w){
 
 /* find the composed protocol for this pairing, or make it */
 function ensureProtocol(inj, act, unit, withIntervals){
-  const wantIv = !!(withIntervals && (act.key==='run' || act.key==='walk'));
-  const match = PROTOCOLS.filter(function(x){
-    const hasIv = (x.streams||[]).some(function(st){ return st.type==='interval'; });
-    const vol = (x.streams||[]).filter(function(st){ return st.type==='volume'; })[0];
-    return x.from && x.from.injury===inj.key && x.from.activity===act.key &&
-           hasIv === wantIv && vol && vol.unit===unit;
-  })[0];
-  if(match) return match;
-  const proto = composeProtocol(inj, act, unit, wantIv);
-  let id = proto.id, n = 2;
-  while(PROTOCOLS.filter(function(x){ return x.id===id; }).length){ id = proto.id+'-'+n; n++; }
-  proto.id = id; PROTOCOLS.push(proto);
-  return proto;
+  /* every presentation already has its protocol, so there is nothing to compose */
+  return PROTOCOLS.filter(function(x){ return x.id === inj.key; })[0] || PROTOCOLS[0];
 }
 
 const NEWCOLOURS = ['#0a0a0a','#3f3f46','#E31B23','#52525b','#71717a','#27272a'];
@@ -3009,29 +2994,35 @@ function matrixPair(A){
 function adProtocols(){
   if(STATE.protoEdit) return protocolEditor();
   $('#adminBody').innerHTML =
-    '<div class="note" style="margin-bottom:16px">A protocol answers three things: <b>what the patient does</b>, <b>what we ask them afterwards</b>, and <b>how their answers change next week</b>. The clinician picks one at the start of a programme and still sets the goal and the running days per patient.</div>'+
-    '<div class="card"><div class="card-h"><h3>Protocol templates</h3><span class="spacer"></span>'+
-      '<button class="btn btn-sm btn-p" data-proto="new">+ New protocol</button></div>'+
-      '<table><thead><tr><th>Name</th><th>Region</th><th>What the patient does</th><th>Start</th><th>Per green week</th>'+
-      '<th>Weighting</th><th>In use</th><th></th></tr></thead><tbody>'+
+    '<div class="note" style="margin-bottom:16px">One presentation, one protocol. A protocol no longer says what the '+
+    'patient does — every programme here is a return to running on the ladder — it says <b>how cautiously '+
+    'their answers are read</b>: where progress stops, where holding stops, how far a sore week eases back, and '+
+    'where a session is severe enough to stop the week.</div>'+
+    '<div class="card"><div class="card-h"><h3>Presentations</h3>'+
+      '<span class="hint">'+PROTOCOLS.length+', each with its own sensitivity</span><span class="spacer"></span>'+
+      '<button class="btn btn-sm btn-p" data-proto="new">+ New presentation</button></div>'+
+      '<div style="overflow-x:auto"><table><thead><tr><th>Presentation</th><th>Region</th>'+
+      '<th>Progress up to</th><th>Hold up to</th><th>Reads</th><th>Sore week</th><th>Red flag</th>'+
+      '<th>In use</th><th></th></tr></thead><tbody>'+
       PROTOCOLS.map(function(x){
         const A = Object.assign({}, CFG, x.algo||{});
-        const lean = Math.abs(A.wAfter-A.wDuring) < 0.05 ? 'even'
-                   : (A.wAfter > A.wDuring ? 'next morning' : 'during session');
+        const lean = Math.abs(A.wAfter-A.wDuring) < 0.05 ? 'both equally'
+                   : (A.wAfter > A.wDuring ? 'the next morning' : 'pain during');
         return '<tr class="click" data-proto="'+x.id+'">'+
-          '<td><b>'+x.name+'</b><div style="font-size:11.5px;color:var(--muted);max-width:260px">'+x.note+'</div></td>'+
-          '<td style="font-size:12.5px">'+(x.region||'\u2014')+'</td>'+
-          '<td style="font-size:12px">'+(x.streams||[]).map(function(st){
-            if(st.type==='volume') return '▸ '+st.name+' — distance';
-            if(st.type==='sets')   return '▸ '+st.name+' — '+st.start.sets+'×'+st.start.reps;
-            return '▸ '+st.name+' — '+(st.rungs||[]).length+' stages';
-          }).join('<br>')+'</td>'+
-          '<td class="mono">'+pct(x.red)+'% off</td>'+
-          '<td class="mono">+'+pct(x.inc)+'%</td>'+
+          '<td><b>'+x.name+'</b><div style="font-size:11.5px;color:var(--muted);max-width:270px">'+x.note+'</div></td>'+
+          '<td style="font-size:12.5px">'+(x.region||'—')+'</td>'+
+          '<td class="mono">'+A.okDuring+' / '+A.okAfter+'</td>'+
+          '<td class="mono">'+A.holdDuring+' / '+A.holdAfter+'</td>'+
           '<td style="font-size:12px">'+lean+'</td>'+
+          '<td class="mono">'+pct(A.deload)+'%</td>'+
+          '<td class="mono">'+A.flagPainDuring+' / '+A.flagPainAfter+'</td>'+
           '<td><span class="pill pill-n">'+protoUses(x.id)+'</span></td>'+
           '<td style="text-align:right"><button class="btn btn-sm" data-proto="'+x.id+'">Edit</button></td></tr>';
-      }).join('') +'</tbody></table></div>';
+      }).join('') +'</tbody></table></div>'+
+      '<div class="card-b"><div class="note">Every pair reads <b>pain during / pain the next morning</b>, out of ten. '+
+      'A bone stress reaction progresses only while both stay at 1; a tendon tolerates 3 and 2. '+
+      'Those two answers are what set the thresholds, so nobody has to reason about a score.</div></div>'+
+    '</div>';
   $$('[data-proto]').forEach(function(b){ b.onclick=function(e){ e.stopPropagation(); STATE.protoEdit=b.dataset.proto; render(); }; });
 }
 
@@ -3528,8 +3519,23 @@ function protocolEditor(){
                              deload:A.deload, dwell:A.dwell,
                              sessionLoad:A.sessionLoad, flagPainDuring:A.flagPainDuring, flagPainAfter:A.flagPainAfter },
                       streams:D.streams };
-    if(isNew){ PROTOCOLS.push(Object.assign({id:'x'+(PROTOCOLS.length+1)}, payload)); toast('Protocol created \u2014 audit logged'); }
-    else { Object.assign(src, payload); toast('Protocol saved \u2014 every patient on it is graded the new way from next week'); }
+    if(isNew){
+      /* a new presentation joins both lists, sharing one algo object */
+      const key = 'x'+(PROTOCOLS.length+1);
+      INJURIES.push({ key:key, name:payload.name, region:payload.region, note:payload.note,
+                      weeks:payload.weeks, typical:['run','walk'],
+                      maxInc:0.10, defRed:0.35, algo:payload.algo });
+      PROTOCOLS.push(Object.assign({id:key}, payload));
+      toast('Presentation created \u2014 audit logged');
+    } else {
+      /* the protocol and its presentation share one algo object, so values are
+         written into it rather than replacing it, or they would drift again */
+      const keep = src.algo;
+      Object.keys(payload.algo).forEach(function(k){ keep[k] = payload.algo[k]; });
+      payload.algo = keep;
+      Object.assign(src, payload);
+      toast('Saved \u2014 every patient on it is graded the new way from next week');
+    }
     STATE.protoEdit=null; STATE.protoDraft=null; render();
   };
 
@@ -3545,91 +3551,116 @@ function protocolEditor(){
    every field here writes to it, so there is nothing about the progression that
    is set in code and hidden from the clinic. */
 function adLadder(){
-  const S = LADDER_SPEC, pc = 6.5;
+  const S = LADDER_SPEC, pc = 6.5, MU = '×';
   const num = function(v, id, step, w){
-    return '<input type="number" value="'+v+'" data-lad="'+id+'" step="'+(step||1)+'" '+
-      'style="width:'+(w||64)+'px;padding:6px 8px;border:1px solid var(--line);border-radius:7px;text-align:right;font-weight:650">';
+    return '<input type="number" value="'+v+'" data-lad="'+id+'" step="'+(step||1)+'" min="0" '+
+      'style="width:'+(w||58)+'px;padding:5px 7px;border:1px solid var(--line);border-radius:7px;text-align:right;font-weight:650">';
   };
-  const del = function(id){ return '<button class="btn btn-sm" data-ladrm="'+id+'" title="Remove this rung">Remove</button>'; };
+  const rm = function(id){ return '<button class="btn btn-sm" data-ladrm="'+id+'">Remove</button>'; };
+  const add = function(g, label){ return '<button class="btn btn-sm" data-ladadd="'+g+'">+ '+label+'</button>'; };
+  const mins = function(v){ return Math.round(v)+' min'; };
+
+  /* one row shape for all three phases: what one session is, how much of it is
+     running, how often, and what that adds up to in a week */
+  let n = 0;
+  const row = function(cells, phase, id){
+    n++;
+    return '<tr>'+
+      '<td class="mono">'+n+'</td>'+
+      '<td><span class="pill pill-n">'+phase+'</span></td>'+
+      cells+
+      '<td style="text-align:right">'+(id ? rm(id) : '')+'</td></tr>';
+  };
 
   const walkRows = S.walk.map(function(x, k){
-    return '<tr><td class="mono">'+(k+1)+'</td>'+
-      '<td>'+num(x.min, 'walk.'+k+'.min')+' min a session</td>'+
-      '<td>'+num(x.days, 'walk.'+k+'.days')+' sessions a week</td>'+
-      '<td class="mono">'+(x.days*x.min)+' min</td>'+
-      '<td style="text-align:right">'+del('walk.'+k)+'</td></tr>';
+    return row('<td>'+num(x.min,'walk.'+k+'.min')+' min out</td>'+
+               '<td class="mono" style="color:var(--muted)">0 min</td>'+
+               '<td>'+num(x.days,'walk.'+k+'.days')+' '+MU+'</td>'+
+               '<td class="mono">'+mins(x.days*x.min)+'</td>'+
+               '<td class="mono" style="color:var(--muted)">0 min</td>',
+               'walking', 'walk.'+k);
   }).join('');
 
   const wrRows = S.walkrun.map(function(x, k){
-    const tot = (x.run+x.walk)*x.reps;
-    return '<tr><td class="mono">'+(S.walk.length+k+1)+'</td>'+
-      '<td>'+num(x.run, 'walkrun.'+k+'.run')+' min run</td>'+
-      '<td>'+num(x.walk, 'walkrun.'+k+'.walk')+' min walk</td>'+
-      '<td>'+num(x.reps, 'walkrun.'+k+'.reps')+' ×</td>'+
-      '<td class="mono">'+(x.run*x.reps)+' min running in '+tot+'</td>'+
-      '<td style="text-align:right">'+del('walkrun.'+k)+'</td></tr>';
+    const tot = (x.run+x.walk)*x.reps, rn = x.run*x.reps, d = S.walkrunDays;
+    return row('<td>'+num(x.run,'walkrun.'+k+'.run')+' run / '+num(x.walk,'walkrun.'+k+'.walk')+
+                 ' walk '+MU+' '+num(x.reps,'walkrun.'+k+'.reps')+'<div class="sd">'+mins(tot)+' out</div></td>'+
+               '<td class="mono"><b>'+mins(rn)+'</b></td>'+
+               '<td class="mono">'+d+' '+MU+'</td>'+
+               '<td class="mono">'+mins(tot*d)+'</td>'+
+               '<td class="mono"><b>'+mins(rn*d)+'</b></td>',
+               'walk/run', 'walkrun.'+k);
   }).join('');
 
-  const preview = RUNLADDER.map(function(r){
-    return '<tr><td class="mono">'+r.rung+'</td><td>'+rungPhase(r)+'</td>'+
-      '<td><b>'+rungStartText(r, pc)+'</b></td>'+
-      '<td>'+rungShapeText(r, pc)+'</td>'+
-      '<td class="mono">'+r.days+'</td>'+
-      '<td class="mono">'+rungWeekText(r, pc)+'</td></tr>';
+  const runRows = S.run.map(function(x, k){
+    const wk = x.lngMin + x.othMin*(x.days-1);
+    return row('<td>'+num(x.lngMin,'run.'+k+'.lngMin')+' long'+
+                 (x.days > 1 ? ' / '+num(x.othMin,'run.'+k+'.othMin')+' others' : '')+
+                 '<div class="sd">'+fmtVol(minsToKm(x.lngMin, pc),'km')+' at 6:30</div></td>'+
+               '<td class="mono"><b>'+mins(x.lngMin)+'</b></td>'+
+               '<td>'+num(x.days,'run.'+k+'.days')+' '+MU+'</td>'+
+               '<td class="mono">'+mins(wk)+'</td>'+
+               '<td class="mono"><b>'+mins(wk)+'</b></td>',
+               'running', 'run.'+k);
   }).join('');
+
+  const G = S.runGen;
+  const head = '<tr><th>Rung</th><th>Phase</th><th>One session</th><th>Of which running</th>'+
+               '<th>A week</th><th>Time on feet</th><th>Running</th><th></th></tr>';
 
   $('#adminBody').innerHTML =
     '<div class="note" style="margin-bottom:16px">Every programme is a position on this ladder, so this page is the '+
-    'progression itself. Change a rung and every plan, chart and prescription in the product follows. '+
-    'Distances are shown at a 6:30 pace; each patient sees their own.</div>'+
+    'progression itself. Change a row and every plan, chart and prescription follows. '+
+    '<b>Every rung is measured in minutes</b>, including the running ones \u2014 distance is worked out per patient from '+
+    'their own pace band, which is why the same rung is 26 km for a fast runner and 17 km for a slower one.</div>'+
 
-    '<div class="card" style="margin-bottom:16px"><div class="card-h"><h3>Walking rungs</h3>'+
-      '<span class="spacer"></span><button class="btn btn-sm" data-ladadd="walk">+ Add a walking rung</button></div>'+
-      '<div class="card-b"><div style="overflow-x:auto"><table><thead><tr><th>Rung</th><th>Session</th><th>Frequency</th>'+
-      '<th>A week</th><th></th></tr></thead><tbody>'+walkRows+'</tbody></table></div></div></div>'+
-
-    '<div class="card" style="margin-bottom:16px"><div class="card-h"><h3>Walk/run rungs</h3>'+
-      '<span class="spacer"></span><button class="btn btn-sm" data-ladadd="walkrun">+ Add a walk/run rung</button></div>'+
+    '<div class="card" style="margin-bottom:16px"><div class="card-h"><h3>The ladder</h3>'+
+      '<span class="hint">'+LADDER_TOP+' rungs, bottom to top</span><span class="spacer"></span>'+
+      add('walk','walking rung')+add('walkrun','walk/run rung')+add('run','running rung')+'</div>'+
       '<div class="card-b">'+
-      '<div style="overflow-x:auto"><table><thead><tr><th>Rung</th><th>Run</th><th>Walk</th><th>Repeats</th>'+
-      '<th>A session</th><th></th></tr></thead><tbody>'+wrRows+'</tbody></table></div>'+
+      '<div class="note" style="margin-bottom:14px">Time on feet <b>drops</b> when running starts, and that is deliberate: '+
+      'rung '+(S.walk.length)+' is '+mins(S.walk[S.walk.length-1].days*S.walk[S.walk.length-1].min)+' of walking, and rung '+
+      (S.walk.length+1)+' cuts it to '+mins((S.walkrun[0].run+S.walkrun[0].walk)*S.walkrun[0].reps*S.walkrunDays)+
+      ' to make room for the first '+mins(S.walkrun[0].run*S.walkrun[0].reps*S.walkrunDays)+' of running. '+
+      'The walking does not stop when running starts, it just stops being the thing that is counted.</div>'+
+      '<div style="overflow-x:auto;max-height:560px;overflow-y:auto">'+
+      '<table><thead>'+head+'</thead><tbody>'+walkRows+wrRows+runRows+'</tbody></table></div>'+
       '<div style="margin-top:14px;display:flex;align-items:center;gap:10px">'+
-        '<span class="st">Sessions a week on the walk/run rungs</span>'+num(S.walkrunDays, 'walkrunDays')+'</div>'+
+        '<span class="st">Sessions a week on the walk/run rungs</span>'+num(S.walkrunDays,'walkrunDays')+'</div>'+
       '</div></div>'+
 
-    '<div class="card" style="margin-bottom:16px"><div class="card-h"><h3>Continuous running</h3>'+
-      '<span class="hint">generated, not listed</span></div><div class="card-b">'+
-      '<div class="note" style="margin-bottom:14px">The running rungs are worked out from these numbers. '+
-      '<b>Starts at</b> should match the running minutes on the last walk/run rung, or the climb will jump at the handoff.</div>'+
+    '<div class="card"><div class="card-h"><h3>Rewrite the running rungs</h3>'+
+      '<span class="hint">a shortcut, not a separate system</span></div><div class="card-b">'+
+      '<div class="note" style="margin-bottom:14px">Nineteen rows of steady growth are tedious to type, so this fills them in. '+
+      'It <b>overwrites every running row above</b>; edit them by hand afterwards if you want to.</div>'+
       '<div class="grid g2" style="align-items:start">'+
         '<div>'+
-          '<div class="setrow"><div style="flex:1"><div class="st">Starts at</div>'+
-            '<div class="sd">Minutes of running a week on the first continuous rung</div></div>'+num(S.run.startMin,'run.startMin')+'</div>'+
-          '<div class="setrow"><div style="flex:1"><div class="st">Tops out at</div>'+
-            '<div class="sd">Where the ladder ends</div></div>'+num(S.run.topMin,'run.topMin')+'</div>'+
-          '<div class="setrow"><div style="flex:1"><div class="st">Growth per rung</div>'+
-            '<div class="sd">0.11 is the 10 to 11% a week the evidence supports</div></div>'+num(S.run.growth,'run.growth',0.01)+'</div>'+
+          '<div class="setrow"><div style="flex:1"><div class="st">Start the running rungs at</div>'+
+            '<div class="sd">Minutes of running a week. Match the last walk/run rung ('+
+            mins(S.walkrun[S.walkrun.length-1].run*S.walkrun[S.walkrun.length-1].reps*S.walkrunDays)+
+            ') or the climb jumps</div></div>'+num(G.startMin,'runGen.startMin',1,70)+'</div>'+
+          '<div class="setrow"><div style="flex:1"><div class="st">Stop at</div>'+
+            '<div class="sd">Minutes of running a week on the top rung</div></div>'+num(G.topMin,'runGen.topMin',1,70)+'</div>'+
+          '<div class="setrow"><div style="flex:1"><div class="st">Each rung is bigger by</div>'+
+            '<div class="sd">0.11 is the 10 to 11% a week the evidence supports</div></div>'+num(G.growth,'runGen.growth',0.01,70)+'</div>'+
         '</div><div>'+
-          '<div class="setrow"><div style="flex:1"><div class="st">Long run ceiling</div>'+
-            '<div class="sd">Minutes. The long run never goes past this</div></div>'+num(S.run.longCapMin,'run.longCapMin')+'</div>'+
-          '<div class="setrow"><div style="flex:1"><div class="st">Long run ramps over</div>'+
-            '<div class="sd">Rungs taken to reach its full share, so the handoff is smooth</div></div>'+num(S.run.longRampRungs,'run.longRampRungs')+'</div>'+
-          '<div class="setrow"><div style="flex:1"><div class="st">Add a session at</div>'+
-            '<div class="sd">Weekly running minutes for the 4th, 5th and 6th session</div></div>'+
-            '<div style="display:flex;gap:6px">'+num(S.run.dayBreaks[0],'run.dayBreaks.0',1,58)+
-              num(S.run.dayBreaks[1],'run.dayBreaks.1',1,58)+num(S.run.dayBreaks[2],'run.dayBreaks.2',1,58)+'</div></div>'+
+          '<div class="setrow"><div style="flex:1"><div class="st">Longest run never passes</div>'+
+            '<div class="sd">Minutes</div></div>'+num(G.longCapMin,'runGen.longCapMin',1,70)+'</div>'+
+          '<div class="setrow"><div style="flex:1"><div class="st">Longest run grows into its share over</div>'+
+            '<div class="sd">Rungs. Keeps the first continuous week level with the last walk/run week</div></div>'+
+            num(G.longRampRungs,'runGen.longRampRungs',1,70)+'</div>'+
+          '<div class="setrow"><div style="flex:1"><div class="st">Add a 4th, 5th and 6th session at</div>'+
+            '<div class="sd">Minutes of running a week</div></div>'+
+            '<div style="display:flex;gap:6px">'+num(G.dayBreaks[0],'runGen.dayBreaks.0',1,54)+
+              num(G.dayBreaks[1],'runGen.dayBreaks.1',1,54)+num(G.dayBreaks[2],'runGen.dayBreaks.2',1,54)+'</div></div>'+
         '</div></div>'+
-      '<span class="lbl" style="margin-top:14px">Share of the week the long run takes</span>'+
-      '<div style="display:flex;gap:10px;flex-wrap:wrap">'+
+      '<span class="lbl" style="margin-top:14px">Share of the week the longest run takes</span>'+
+      '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px">'+
         [3,4,5,6].map(function(d){ return '<div style="display:flex;align-items:center;gap:6px">'+
-          '<span class="sd">'+d+' a week</span>'+num(S.run.longShare[d],'run.longShare.'+d,0.01,62)+'</div>'; }).join('')+
-      '</div></div></div>'+
-
-    '<div class="card"><div class="card-h"><h3>The ladder as it stands</h3>'+
-      '<span class="hint">'+LADDER_TOP+' rungs</span></div><div class="card-b">'+
-      '<div style="overflow-x:auto;max-height:420px;overflow-y:auto"><table><thead><tr><th>Rung</th><th>Phase</th>'+
-      '<th>Biggest session</th><th>Written as</th><th>Days</th><th>A week</th></tr></thead><tbody>'+
-      preview+'</tbody></table></div></div></div>';
+          '<span class="sd">'+d+' a week</span>'+num(G.longShare[d],'runGen.longShare.'+d,0.01,58)+'</div>'; }).join('')+
+      '</div>'+
+      '<button class="btn btn-p" id="lad-regen">Rewrite the running rungs</button>'+
+      '</div></div>';
 
   const setPath = function(path, v){
     const parts = path.split('.');
@@ -3640,33 +3671,33 @@ function adLadder(){
   $$('[data-lad]').forEach(function(el){
     el.onchange = function(){
       const v = +el.value;
-      if(!isFinite(v) || v <= 0) return;
+      if(!isFinite(v) || v < 0) return;
       setPath(el.dataset.lad, v);
       rebuildLadder(); toast('Ladder updated \u2014 every plan recalculated'); render();
     };
   });
   $$('[data-ladadd]').forEach(function(el){
     el.onclick = function(){
-      const g = el.dataset.ladadd;
-      if(g === 'walk'){
-        const last = LADDER_SPEC.walk[LADDER_SPEC.walk.length-1] || {days:3, min:15};
-        LADDER_SPEC.walk.push({days:last.days, min:last.min + 5});
-      } else {
-        const last = LADDER_SPEC.walkrun[LADDER_SPEC.walkrun.length-1] || {run:1, walk:4, reps:5};
-        LADDER_SPEC.walkrun.push({run:last.run + 1, walk:last.walk, reps:last.reps});
-      }
+      const g = el.dataset.ladadd, arr = LADDER_SPEC[g], last = arr[arr.length-1];
+      if(g === 'walk')         arr.push({days:last?last.days:3, min:(last?last.min:15)+5});
+      else if(g === 'walkrun') arr.push({run:(last?last.run:1)+1, walk:last?last.walk:2, reps:last?last.reps:5});
+      else                     arr.push({days:last?last.days:3, lngMin:Math.round((last?last.lngMin:30)*1.11),
+                                         othMin:Math.round((last?last.othMin:30)*1.11)});
       rebuildLadder(); toast('Rung added'); render();
     };
   });
   $$('[data-ladrm]').forEach(function(el){
     el.onclick = function(){
-      const parts = el.dataset.ladrm.split('.');
-      const arr = LADDER_SPEC[parts[0]];
+      const parts = el.dataset.ladrm.split('.'), arr = LADDER_SPEC[parts[0]];
       if(arr.length <= 1){ toast('A phase needs at least one rung'); return; }
       arr.splice(+parts[1], 1);
       rebuildLadder(); toast('Rung removed \u2014 every plan recalculated'); render();
     };
   });
+  $('#lad-regen').onclick = function(){
+    LADDER_SPEC.run = generateRunRungs(LADDER_SPEC);
+    rebuildLadder(); toast('Running rungs rewritten \u2014 '+LADDER_TOP+' rungs'); render();
+  };
 }
 
 function adAlgorithm(){
